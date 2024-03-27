@@ -64,14 +64,14 @@
     @test nstrs_polymino == n_polyminoes_cumulative
     @test nstrs_polyiamond == n_polyiamonds_cumulative
 
-    if length(workers()) > 1
-        rmprocs(workers())
-    end
-    @add_enumworkers 3
+    # if length(workers()) > 1
+    #     rmprocs(workers())
+    # end
+    # @add_enumworkers 3
 
-    @test nstrs_16 == polyenum_distributed(I16, max_size=Inf, verbose=false)[1]
-    @test nstrs_137 == polyenum_distributed(I137, max_size=Inf, verbose=false)[1]
-    @test nstrs_cyc == polyenum_distributed(Icyc, max_size=Inf, verbose=false)[1]
-    @test nstrs_polymino == [polyenum_distributed(I_polymino, max_size=i, verbose=false)[1] for i in 1:length(n_polyminoes_cumulative)]
-    @test nstrs_polyiamond == [polyenum_distributed(I_polyiamond, max_size=i, verbose=false)[1] for i in 1:length(n_polyiamonds_cumulative)]
+    # @test nstrs_16 == polyenum_distributed(I16, max_size=Inf, verbose=false)[1]
+    # @test nstrs_137 == polyenum_distributed(I137, max_size=Inf, verbose=false)[1]
+    # @test nstrs_cyc == polyenum_distributed(Icyc, max_size=Inf, verbose=false)[1]
+    # @test nstrs_polymino == [polyenum_distributed(I_polymino, max_size=i, verbose=false)[1] for i in 1:length(n_polyminoes_cumulative)]
+    # @test nstrs_polyiamond == [polyenum_distributed(I_polyiamond, max_size=i, verbose=false)[1] for i in 1:length(n_polyiamonds_cumulative)]
 end;

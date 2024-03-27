@@ -6,9 +6,10 @@ export PolygonGeometry, UnitTriangleGeometry, UnitSquareGeometry, UnitPentagonGe
 export draw_structure, draw_structures, @structures_png, @structures_pdf
 
 include("utils.jl")
-include("interactions.jl")
 include("geometry.jl")
 include("structure.jl")
+include("assembly_systems.jl")
+include("concatenation.jl")
 include("enumeration.jl")
 include("drawing.jl")
 end

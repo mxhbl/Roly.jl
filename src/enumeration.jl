@@ -194,8 +194,7 @@ function polyenum(assembly_system::AssemblySystem{T,F};
 
     out_base, out_vals = polyrs(v₀, assembly_system, reducer, reduce_op, aggregator,
                                 rejector, nothing, nothing, max_size, max_strs)
-    out_vals = filter(x -> !isnothing(x), out_vals)
-    if isempty(out_vals)
+    if isnothing(reducer) && isnothing(aggregator) && isnothing(rejector)
         return out_base
     else
         return out_base, out_vals
@@ -215,7 +214,7 @@ function polygenerate(callback::Function, assembly_system::AssemblySystem{T,F};
 
         enqueue!(queue, monomer)
         push!(hashes, hashval)
-        open_bonds[hashval] = all_open_bonds(monomer, assembly_system.interaction_matrix)
+        open_bonds[hashval] = all_open_bonds(monomer, assembly_system.intmat)
     end
 
     u = Structure{T,F}()
@@ -240,7 +239,7 @@ function polygenerate(callback::Function, assembly_system::AssemblySystem{T,F};
             end
 
             next = copy(u)
-            species_j, aj = assembly_system.face_translator[j]
+            species_j, aj =  irg_unflatten(j, assembly_system._sides_sum)
             hashval = hash(next)
 
             monomer_opens = open_bonds[hash(assembly_system.monomers[species_j])]

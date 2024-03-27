@@ -1,5 +1,6 @@
 using StaticArrays
 using Graphs
+using LinearAlgebra
 
 DefInt, DefFloat = Int16, Float32
 
