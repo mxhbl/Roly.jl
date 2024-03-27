@@ -1,8 +1,3 @@
-using LinearAlgebra
-using StaticArrays
-using Graphs
-
-
 struct AssemblySystem{T<:Integer, F<:AbstractFloat}
     intmat::BitMatrix
     monomers::Vector{Structure{T,F}}

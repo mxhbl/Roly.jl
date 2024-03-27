@@ -10,16 +10,9 @@ struct Coordinates2D{F<:AbstractFloat} <: AbstractCoordinates
     xs::Vector{MVector{2,F}}
     ψs::Vector{F}
 end
-
-struct Coordinates3D{F<:AbstractFloat} <: AbstractCoordinates
-    xs::Vector{MVector{3,F}}
-    ψs::Vector{MVector{4,F}}
-end
-
 function Coordinates2D(xs::Vector{SVector{2,F}}, θs::Vector) where {F}
     return Coordinates2D{F}(xs, convert.(F, θs))
 end
-
 Base.length(cp::Coordinates2D) = length(cp.ψs)
 Base.getindex(cp::Coordinates2D, i::Integer) = (cp.xs[i], cp.ψs[i])
 function Base.iterate(cp::Coordinates2D, state=1)
@@ -31,13 +24,17 @@ function Base.copy!(dest::Coordinates2D{F}, src::Coordinates2D{F}) where {F}
     copy!(dest.ψs, src.ψs)
     return dest
 end
-
 Base.deepcopy(qs::Coordinates2D{F}) where {F} = Coordinates2D{F}([copy(x) for x in qs.xs], copy(qs.ψs))
 #TODO: make a non-deep version of vcat to save some memory
-
 function Base.vcat(qi::C, qj::D) where {C<:AbstractCoordinates,D<:AbstractCoordinates}
     return C(vcat(qi.xs, qj.xs), vcat(qi.ψs, qj.ψs))
 end
+
+# struct Coordinates3D{F<:AbstractFloat} <: AbstractCoordinates
+#     xs::Vector{MVector{3,F}}
+#     ψs::Vector{MVector{4,F}}
+# end
+
 
 function rotate(v::SVector{2,F}, ψ::F) where {F}
     c, s = cos(π * ψ), sin(π * ψ)
@@ -54,7 +51,6 @@ function rotate!(qs::Coordinates2D{F}, ψ::F) where {F}
         qs.ψs[i] = mod.(qs.ψs[i] .+ ψ, F(2.0))
     end
 end
-
 function shift!(qs::Coordinates2D{F}, Δx::AbstractVector{F}) where {F}
     for i in eachindex(qs.xs)
         qs.xs[i][1] += Δx[1]
@@ -62,7 +58,6 @@ function shift!(qs::Coordinates2D{F}, Δx::AbstractVector{F}) where {F}
     end
     return
 end
-
 function grab_at!(qs::Coordinates2D{F}, i::Integer) where {F}
     # Transforms qs such that particle i it at the origin with reference orientation
     shift!(qs, deepcopy(-qs.xs[i]))
@@ -70,25 +65,7 @@ function grab_at!(qs::Coordinates2D{F}, i::Integer) where {F}
     return
 end
 
-function cart2pol(x::F, y::Real) where {F}
-    y = convert(y, F)
-    return [sqrt(x^2 + y^2), atan(y, x) / π]
-end
-
-function pol2cart(r::F, ψ::Real) where {F}
-    ψ = convert(F, ψ)
-    return [r * cos(π * ψ),  r * sin(π * ψ)]
-end
-
 abstract type AbstractGeometry{T<:Integer,F<:AbstractFloat} end
-
-# struct MeshGeometry{T<:Int, R<:Real}<:AbstractGeometry
-#     rs::Vector{R}               # Distances of the side midpoints from center
-#     θs::Vector{R}               # Angles of the side midpoints from reference axis (in units of π)
-#     ϕs::Vector{R}               # Angle between side and side-midpoint line (in units of π)
-#     mesh::Vector{SVector{2,R}}  # Mesh of the building block (used for overlap checks)
-#     anatomy::DiGraph{T}           # Oriented graph of the dual polyhedron associated with the bb symmetry group
-# end
 
 struct PolygonGeometry{T<:Integer,F<:AbstractFloat} <: AbstractGeometry{T,F}
     xs::Vector{SVector{2,F}}
@@ -118,7 +95,6 @@ struct PolygonGeometry{T<:Integer,F<:AbstractFloat} <: AbstractGeometry{T,F}
         return new{T,F}(xs, rs, θs, ϕs, corners, anatomy, r_max)
     end
 end
-
 Base.length(geom::PolygonGeometry) = length(geom.rs)
 
 const UnitTriangleGeometry = PolygonGeometry(DefInt(3), DefFloat(1.0))
@@ -126,6 +102,14 @@ const UnitSquareGeometry = PolygonGeometry(DefInt(4), DefFloat(1.0))
 const UnitPentagonGeometry = PolygonGeometry(DefInt(5), DefFloat(1.0))
 const UnitHexagonGeometry = PolygonGeometry(DefInt(6), DefFloat(1.0))
 #TODO Implement basic 3d shapes: Platonic solids and polygon extrusions
+
+# struct MeshGeometry{T<:Int, R<:Real}<:AbstractGeometry
+#     rs::Vector{R}               # Distances of the side midpoints from center
+#     θs::Vector{R}               # Angles of the side midpoints from reference axis (in units of π)
+#     ϕs::Vector{R}               # Angle between side and side-midpoint line (in units of π)
+#     mesh::Vector{SVector{2,R}}  # Mesh of the building block (used for overlap checks)
+#     anatomy::DiGraph{T}           # Oriented graph of the dual polyhedron associated with the bb symmetry group
+# end
 
 function contact_status(Δx, ψ_i, ψ_j, gi::AbstractGeometry, gj::AbstractGeometry) end
 
@@ -140,7 +124,7 @@ function attachment_offset(face_i::Integer, face_j::Integer,
     return Δx, Δψ
 end
 
-# TODO: this function is susceptible to roundoff errors, decide how to proceed and set thresh
+# TODO: this function is susceptible to roundoff errors, we very careful with thresh
 function face_pairs(Δx::AbstractVector{F}, ψ_i::F, ψ_j::F, geom_i::PolygonGeometry{T,F}, geom_j::PolygonGeometry{T,F},
                     convex=false, thresh=1e-2) where {T,F}
     pairs = Tuple{T,T}[]
@@ -162,7 +146,7 @@ end
 
 function overlap(Δx, ψ_i, ψ_j, geom_i, geom_j; buffer=0.1)
     # Assumes lattice!!
-    return norm(Δx) < 2geom_i.rs[1] - 0.1
+    return norm(Δx) < 2geom_i.rs[1] - buffer
     # return __check_overlap(geom_i.mesh, transform(geom_j.mesh, Δx, Δψ))
 end
 

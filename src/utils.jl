@@ -4,6 +4,16 @@ HashType = UInt
 DefInt, DefFloat = Int16, Float32
 SideLoc{T} = Tuple{T,T}  # Location of a binding site within a structure, in the form (particle, side)
 
+function cart2pol(x::F, y::Real) where {F}
+    y = convert(F, y)
+    return [sqrt(x^2 + y^2), atan(y, x) / π]
+end
+function pol2cart(r::F, ψ::Real) where {F}
+    ψ = convert(F, ψ)
+    return [r * cos(π * ψ),  r * sin(π * ψ)]
+end
+
+
 function irg_flatten(a::Integer, b::Integer, intervals::AbstractVector{<:Integer})
     if a == 1
         return b
@@ -42,8 +52,6 @@ function are_bridge(g::AbstractNautyGraph, vs::AbstractVector{<:Integer})
 
     return !vertices_connected(g, findfirst(neighs), findall(neighs), forbidden)
 end
-
-
 function vertices_connected(g::DirectedDenseNautyGraph, v0::Integer, 
     targets::AbstractVector{<:Integer}, forbidden::AbstractVector{<:Integer})
 

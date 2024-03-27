@@ -1,4 +1,3 @@
-
 function concatenate_structures(si::Structure{T,F}, sj::Structure{T,F}, loc_i::SideLoc{T},
     loc_j::SideLoc{T}, assembly_system::AssemblySystem) where {T,F}
 
@@ -208,80 +207,4 @@ function shrink!(s::Structure)
 
     canonize!(s)
     return true
-end
-
-function face_orientation(s::Structure, i::Integer, assembly_system::AssemblySystem)
-    si, fi = s.translator.bwd[:, i]
-    spec = s.species[si]
-    ψ = Rational(s.positions.ψs[si])
-    θ = Rational(assembly_system.geometries[spec].θs[fi])
-    ϕ = Rational(assembly_system.geometries[spec].ϕs[fi])
-
-    α = (θ + ϕ + ψ) % 2
-    return α
-end
-
-function analyze_cycle(s::Structure, i::Integer, j::Integer)
-    path = Graphs.a_star(s.anatomy, i, j)
-    if length(path) == 0
-        return 1 // 1
-    end
-
-    angles = [1//2, 0//1, -1//2]
-
-    total_angle = 0 // 1
-    angle = 0 // 1
-    counter = 0
-    for edge in path
-        if !has_edge(s.anatomy, reverse(edge))
-            counter += 1
-            # i = s.species[s.translator.bwd[1, edge.src]]
-            # n_sides = length(assembly_system.geometries[i])
-            # angle += 2 // n_sides
-        else
-            angle = angles[counter]
-            # if angle > 1 // 1
-            #     angle -= 2 // 1
-            # end
-            total_angle += angle
-            counter = 0
-            angle = 0 // 1
-        end
-    end
-
-    # if angle > 1 // 1
-    #     angle -= 2 // 1
-    # end
-    angle = angles[counter]
-
-    total_angle += angle
-
-    return total_angle
-end
-
-function is_cyclic(s::Structure{T,F}, assembly_system::AssemblySystem) where {T,F}
-    #WORKS ONLY IN 2D
-    g = s.anatomy
-    A = assembly_system.intmat
-
-    open_sites = filter(v->outdegree(g, v)==1, vertices(g))
-    filter!(s->sum(@view A[:, g.labels[s]]) > 0, open_sites)
-
-    for (i, oi) in enumerate(open_sites), oj in @view open_sites[i:end]
-        ti, tj = g.labels[oi], g.labels[oj]
-
-        if A[ti, tj] > 0
-            αi = face_orientation(s, oi, assembly_system)
-            αj = face_orientation(s, oj, assembly_system)
-
-            could_be_cyclic = abs(αi - αj) == 1
-            if could_be_cyclic
-                loc_i = Tuple{T,T}(s.translator.bwd[:, oi])
-                loc_j = Tuple{T,T}(s.translator.bwd[:, oj])
-                s_concat = concatenate_structures(s, s, loc_i, loc_j, assembly_system)
-                !isnothing(s_concat) && return true
-            end
-        end
-    end
-    return false
 end
