@@ -1,6 +1,6 @@
 struct AssemblySystem{T<:Integer, F<:AbstractFloat, G<:AbstractGeometry{T,F}}
     intmat::BitMatrix
-    monomers::Vector{Structure{T,F}}
+    monomers::Vector{Polyform{T,F}}
     geometries::Vector{G}
     n_species::Integer
     n_edges::Integer
@@ -15,7 +15,7 @@ function AssemblySystem(interactions::AbstractMatrix{<:Integer}, geometries::Vec
     n_sides = sum(sides; init=0)
     n_edges = size(interactions, 1)
 
-    monomers = Structure{T,F}[]
+    monomers = Polyform{T,F}[]
     sides_sum = cumsum(sides)
     last_label = 0
 

@@ -7,13 +7,13 @@ using Distributed
 using Serialization
 using Base.Threads
 
-function f!(k::Structure{T,F}, s::Structure{T,F}) where {T,F}
+function f!(k::Polyform{T,F}, s::Polyform{T,F}) where {T,F}
     copy!(k, s)
     shrink!(k)
     return k
 end
 
-function adj!(u::Structure{T,F}, v::Structure{T,F}, j::Integer, hashes::Vector{HashType},
+function adj!(u::Polyform{T,F}, v::Polyform{T,F}, j::Integer, hashes::Vector{HashType},
               assembly_system::AssemblySystem) where {T,F}
     ### TODO: We should exploit that canonical labels are guaranteed (see Nauty User Guide p.4) to be in order of color
     ### So, if we know the color of the particle that would be removed, we can filter the possible offspring
@@ -38,7 +38,7 @@ end
 
 FnorNothing = Union{<:Function,Nothing}
 
-function polyrs(v₀::Structure{T,F},
+function polyrs(v₀::Polyform{T,F},
                 assembly_system::AssemblySystem{T,F},
                 reducer::FnorNothing,
                 reduce_op::FnorNothing,
@@ -67,9 +67,9 @@ function polyrs(v₀::Structure{T,F},
     depth = 0
     n_strs = 0
 
-    v = Structure{T,F}()
-    u = Structure{T,F}()
-    k = Structure{T,F}()
+    v = Polyform{T,F}()
+    u = Polyform{T,F}()
+    k = Polyform{T,F}()
 
     copy!(v, v₀)
 
@@ -184,7 +184,7 @@ function polyenum(assembly_system::AssemblySystem{T,F};
                   reduce_op::FnorNothing=nothing,
                   aggregator::FnorNothing=nothing,
                   rejector::FnorNothing=nothing) where {T,F}
-    v₀ = Structure{T,F}()
+    v₀ = Polyform{T,F}()
     max_size = isinf(max_size) ? 0 : convert(Int, max_size)
     max_strs = isinf(max_strs) ? 0 : convert(Int, max_strs)
 
@@ -206,7 +206,7 @@ function polygenerate(callback::Function, assembly_system::AssemblySystem{T,F};
                       max_size=Inf, max_strs=Inf) where {T,F}
     values = [callback(monomer) for monomer in assembly_system.monomers]
     hashes = Set{HashType}()
-    queue = Queue{Structure{T,F}}()
+    queue = Queue{Polyform{T,F}}()
     open_bonds = Dict{HashType,Vector{Tuple{Int,Int}}}()
 
     for monomer in assembly_system.monomers
@@ -217,7 +217,7 @@ function polygenerate(callback::Function, assembly_system::AssemblySystem{T,F};
         open_bonds[hashval] = all_open_bonds(monomer, assembly_system.intmat)
     end
 
-    u = Structure{T,F}()
+    u = Polyform{T,F}()
     n_strs = length(assembly_system.monomers)
 
     while !isempty(queue) && n_strs < max_strs

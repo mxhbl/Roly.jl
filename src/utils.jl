@@ -6,7 +6,6 @@ DefInt, DefFloat = Int16, Float32
 SideLoc{T} = Tuple{T,T}  # Location of a binding site within a structure, in the form (particle, side)
 CVec{N,F} = Union{SVector{N,F},MVector{N,F}}
 
-
 function quaternion_multiply(ψi::AbstractVector, ψj::AbstractVector)
     a, b, c, d = ψi
     x, y, z, w = ψj
@@ -44,6 +43,81 @@ function irg_unflatten(i::Integer, intervals::AbstractVector{<:Integer})
         return (a, b)
     end
 end
+
+
+mutable struct EncTranslator{T}
+    fwd::Vector{Vector{T}}
+    bwd::Matrix{T}
+    n::T
+    m::T
+
+    function EncTranslator(fwd::AbstractVector{<:AbstractVector{T}}) where {T}
+        n = length(fwd)
+        m = sum(length(f) for f in fwd; init=0)
+
+        bwd = zeros(2, m)
+        for i in 1:m
+            for (j, f) in enumerate(fwd)
+                if i ∈ f
+                    bwd[:, i] .= [T(j), T(findfirst(x->x==i, f))]
+                    break
+                end
+            end
+        end
+
+        return new{T}(fwd, bwd, n, m)
+    end
+    function EncTranslator(fwd::AbstractVector{<:AbstractVector{T}}, bwd::AbstractMatrix{T}) where {T}
+        return new{T}(fwd, bwd, length(fwd), size(bwd, 2))
+    end
+end
+EncTranslator{T}() where {T} = EncTranslator(Vector{T}[], zeros(T, (0, 0)))
+
+function Base.permute!(t::EncTranslator, p::AbstractVector{<:Integer})
+    @assert length(p) == t.m
+
+    t.bwd .= @view t.bwd[:, p]
+
+    inv_p = invperm(p)
+    t.fwd .= [inv_p[f] for f in t.fwd]
+    return
+end
+
+
+function Base.vcat(t::EncTranslator{T}, h::EncTranslator) where {T}
+    fwd = vcat(t.fwd, [hf .+ t.m for hf in h.fwd]) #TODO: reduce allocation
+    bwd = hcat(t.bwd, h.bwd .+ t.n*[T(1), T(0)])
+    return EncTranslator(fwd, bwd)
+end
+function Base.deleteat!(t::EncTranslator, i::Integer)
+    del_ai = t.fwd[i]
+
+    ai_shifter(ai) = ai - sum(x->x < ai, del_ai) #TODO:check gt or gte
+    k_shifter(k) = k - (k > i)
+
+    deleteat!(t.fwd, i)
+    for j in eachindex(t.fwd)
+        t.fwd[j] .= ai_shifter.(t.fwd[j])
+    end
+    t.bwd = t.bwd[:, setdiff(1:end, del_ai)]
+    t.bwd[1, :] .= k_shifter.(t.bwd[1, :])
+
+    t.n -= 1
+    t.m -= length(del_ai)
+    return
+end
+Base.copy(t::EncTranslator) = EncTranslator([copy(f) for f in t.fwd], copy(t.bwd))
+function Base.copy!(dest::EncTranslator{T}, src::EncTranslator{T}) where {T}
+    # TODO: make this non-allocating
+    # copy!(dest.fwd, src.fwd)
+    resize!(dest.fwd, src.n)
+    dest.fwd .= copy.(src.fwd)
+    dest.bwd = copy(src.bwd)
+    dest.n = src.n
+    dest.m = src.m
+    return dest
+end
+
 
 function are_bridge(g::AbstractNautyGraph, vs::AbstractVector{<:Integer})
     neighs = zeros(Bool, nv(g))

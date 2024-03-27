@@ -1,25 +1,25 @@
-function concatenate_structures(si::Structure{T,F}, sj::Structure{T,F}, loc_i::SideLoc{T},
+function concatenate_structures(poly_i::Polyform{T,F}, poly_j::Polyform{T,F}, loc_i::SideLoc{T},
     loc_j::SideLoc{T}, assembly_system::AssemblySystem) where {T,F}
 
-    ni, _, nfi = convert(Tuple{T,T,T}, size(si))
+    ni, _, nfi = convert(Tuple{T,T,T}, size(poly_i))
     geometries = assembly_system.geometries
     interaction_matrix = assembly_system.intmat
 
     i, face_i = loc_i
     j, face_j = loc_j
 
-    species_i = si.species
-    species_j = sj.species
+    species_i = poly_i.species
+    species_j = poly_j.species
 
     Δx, Δψ = attachment_offset(face_i, face_j, geometries[species_i[i]], geometries[species_j[j]])
-    qi = si.positions
+    qi = poly_i.positions
 
-    qj = deepcopy(sj.positions)
+    qj = deepcopy(poly_j.positions)
     grab_at!(qj, j)
     rotate!(qj, qi.ψs[i] + Δψ)
     shift!(qj, qi.xs[i] + rotate(Δx, qi.ψs[i]))
 
-    anatomy = blockdiag(si.anatomy, sj.anatomy)
+    anatomy = blockdiag(poly_i.anatomy, poly_j.anatomy)
 
     for (i, (xi, ψi)) in enumerate(qi)
         for (j, (xj, ψj)) in enumerate(qj)
@@ -30,11 +30,11 @@ function concatenate_structures(si::Structure{T,F}, sj::Structure{T,F}, loc_i::S
             for pair in pairs
                 fi, fj = pair
 
-                ai = si.translator.fwd[i][fi]
-                aj = sj.translator.fwd[j][fj]
+                ai = poly_i.translator.fwd[i][fi]
+                aj = poly_j.translator.fwd[j][fj]
 
-                li = si.anatomy.labels[ai]
-                lj = sj.anatomy.labels[aj]
+                li = poly_i.anatomy.labels[ai]
+                lj = poly_j.anatomy.labels[aj]
 
                 if !interaction_matrix[li, lj]
                     return nothing
@@ -47,22 +47,22 @@ function concatenate_structures(si::Structure{T,F}, sj::Structure{T,F}, loc_i::S
     end
 
     positions = vcat(qi, qj)
-    species = vcat(si.species, sj.species)
-    translator = vcat(si.translator, sj.translator)
+    species = vcat(poly_i.species, poly_j.species)
+    translator = vcat(poly_i.translator, poly_j.translator)
 
-    return Structure{T,F}(anatomy, translator, species, positions)
+    return Polyform{T,F}(anatomy, translator, species, positions)
 end
 
-function open_bond(s::Structure, j::Integer, interaction_matrix::AbstractMatrix)
-    n = nv(s.anatomy)
-    fs = faces(s)
+function open_bond(p::Polyform, j::Integer, interaction_matrix::AbstractMatrix)
+    n = nv(p.anatomy)
+    fs = faces(p)
     l = j
     oneighs = zeros(Int, n)
     for ai in 1:n
-        nneighs = NautyGraphs.outneighbors!(oneighs, s.anatomy, ai)
+        nneighs = NautyGraphs.outneighbors!(oneighs, p.anatomy, ai)
         bound = false
         for i_neigh in 1:nneighs
-            if has_edge(s.anatomy, oneighs[i_neigh], ai)
+            if has_edge(p.anatomy, oneighs[i_neigh], ai)
                 bound = true
                 break
             end
@@ -85,39 +85,39 @@ function open_bond(s::Structure, j::Integer, interaction_matrix::AbstractMatrix)
     return nothing
 end
 
-function all_open_bonds(s::Structure, interaction_matrix::AbstractMatrix)
+function all_open_bonds(p::Polyform, interaction_matrix::AbstractMatrix)
     bonds = Tuple{Int,Int}[]
     j = 1
-    b = open_bond(s, j, interaction_matrix)
+    b = open_bond(p, j, interaction_matrix)
     while !isnothing(b)
         push!(bonds, b)
         j += 1
-        b = open_bond(s, j, interaction_matrix)
+        b = open_bond(p, j, interaction_matrix)
     end
     return bonds
 end
 
-function attach_monomer!(s::Structure{T,F}, bond::Tuple{<:Integer,<:Integer}, assembly_system::AssemblySystem, fillhash::Bool=false) where {T,F}
-    n, nk, nf = size(s)
+function attach_monomer!(p::Polyform{T,F}, bond::Tuple{<:Integer,<:Integer}, assembly_system::AssemblySystem, fillhash::Bool=false) where {T,F}
+    n, nk, nf = size(p)
     geometries = assembly_system.geometries
 
     ai, j = bond
-    i, face_i = @view s.translator.bwd[:, ai]
+    i, face_i = @view p.translator.bwd[:, ai]
     species_j, face_j = irg_unflatten(j, assembly_system._sides_sum)
 
-    spec = species(s)
-    sp_i = species(s)[i]
+    spec = species(p)
+    sp_i = species(p)[i]
     geom_i = geometries[sp_i]
     geom_j = geometries[species_j]
 
     Δx, Δψ = attachment_offset(T(face_i), T(face_j), geom_i, geom_j)
-    ψj = Δψ + s.positions.ψs[i]
+    ψj = Δψ + p.positions.ψs[i]
     # ψj = quaternion_multiply(Δψ, s.positions.ψs[i])
 
-    xj = s.positions.xs[i] + rotate(Δx, s.positions.ψs[i])
+    xj = p.positions.xs[i] + rotate(Δx, p.positions.ψs[i])
 
     anatomy_edges = Edge{Cint}[]
-    for (i, (xi, ψi)) in enumerate(s.positions)
+    for (i, (xi, ψi)) in enumerate(p.positions)
         cstat, pairs = contact_status(xj - xi, ψi, ψj, geometries[spec[i]], geom_j)
         # If the new structure is invalid, call grow! again with j->j+1
         if !cstat
@@ -127,9 +127,9 @@ function attach_monomer!(s::Structure{T,F}, bond::Tuple{<:Integer,<:Integer}, as
         for pair in pairs
             fi, fj = pair
 
-            ai = s.translator.fwd[i][fi]
+            ai = p.translator.fwd[i][fi]
             aj = fj
-            li = s.anatomy.labels[ai]
+            li = p.anatomy.labels[ai]
             lj = assembly_system.monomers[species_j].anatomy.labels[aj]
 
             if !assembly_system.intmat[li, lj]
@@ -143,44 +143,44 @@ function attach_monomer!(s::Structure{T,F}, bond::Tuple{<:Integer,<:Integer}, as
         end
     end
 
-    NautyGraphs.blockdiag!(s.anatomy, assembly_system.monomers[species_j].anatomy)
+    NautyGraphs.blockdiag!(p.anatomy, assembly_system.monomers[species_j].anatomy)
     for ae in anatomy_edges
-        add_edge!(s.anatomy, ae)
+        add_edge!(p.anatomy, ae)
     end
 
-    push!(s.positions.xs, xj)
-    push!(s.positions.ψs, ψj)
+    push!(p.positions.xs, xj)
+    push!(p.positions.ψs, ψj)
 
-    push!(s.species, species_j)
-    s.translator = vcat(s.translator, assembly_system.monomers[species_j].translator)
+    push!(p.species, species_j)
+    p.translator = vcat(p.translator, assembly_system.monomers[species_j].translator)
     #TODO MAKE THIS PRETTY, THIS WILL CANONIZE A STRUCTURE TWICE IF GROW! is CALLED
     if fillhash
-        _, n = NautyGraphs._fill_hash!(s.anatomy)
-        s.σ = n
+        _, n = NautyGraphs._fill_hash!(p.anatomy)
+        p.σ = n
     else
-        s.σ = 0
+        p.σ = 0
     end
     return true
 end
 
-function grow!(s::Structure{T,F}, k::Integer, assembly_system::AssemblySystem) where {T,F}
-    bond = open_bond(s, k, assembly_system.intmat)
+function grow!(p::Polyform{T,F}, k::Integer, assembly_system::AssemblySystem) where {T,F}
+    bond = open_bond(p, k, assembly_system.intmat)
     if isnothing(bond)
         return false, k
     end
 
-    success = attach_monomer!(s, bond, assembly_system)
+    success = attach_monomer!(p, bond, assembly_system)
     if !success
-        return grow!(s, k+1, assembly_system)
+        return grow!(p, k+1, assembly_system)
     end
 
-    canonize!(s)
+    canonize!(p)
     return true, k
 end
     
 
-function shrink!(s::Structure)
-    n, _, _ = size(s)
+function shrink!(p::Polyform)
+    n, _, _ = size(p)
     if n == 0
         return false
     end
@@ -189,24 +189,24 @@ function shrink!(s::Structure)
     k = 0
     if n > 1
         while true
-            idx = s.translator.bwd[1, end-k]
-            idxs = s.translator.fwd[idx]
-            if !are_bridge(s.anatomy, idxs)
+            idx = p.translator.bwd[1, end-k]
+            idxs = p.translator.fwd[idx]
+            if !are_bridge(p.anatomy, idxs)
                 break
             end
             k += 1
         end
     end
 
-    idx = s.translator.bwd[1, end-k]
+    idx = p.translator.bwd[1, end-k]
 
-    deleteat!(s.positions.xs, idx)
-    deleteat!(s.positions.ψs, idx)
-    deleteat!(s.species, idx)
-    rem_vertices!(s.anatomy, s.translator.fwd[idx])
+    deleteat!(p.positions.xs, idx)
+    deleteat!(p.positions.ψs, idx)
+    deleteat!(p.species, idx)
+    rem_vertices!(p.anatomy, p.translator.fwd[idx])
 
-    deleteat!(s.translator, idx)
+    deleteat!(p.translator, idx)
 
-    canonize!(s)
+    canonize!(p)
     return true
 end

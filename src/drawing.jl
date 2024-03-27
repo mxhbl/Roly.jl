@@ -1,7 +1,8 @@
-using Luxor, Plots, ColorSchemes
+using Luxor
+using Plots, ColorSchemes
 using Statistics: mean
 
-default_colors = palette([colorant"#7E9EC4", colorant"#E64B48", colorant"#FFC200",
+const default_colors = palette([colorant"#7E9EC4", colorant"#E64B48", colorant"#FFC200",
                           colorant"#C87CDA", colorant"#78F8F0", colorant"#34DA3A", colorant"#FF629A"])
 
 function draw_ngon(n, a; c="grey90", shades=nothing)
@@ -62,7 +63,7 @@ function draw_ngon(n, a; c="grey90", shades=nothing)
     end
 end
 
-function draw_structure(structure, assembly_system; r=200, species_colors=nothing)
+function draw_polyform(structure, assembly_system; r=200, species_colors=nothing)
     spes = species(structure)
 
     if isnothing(species_colors)
@@ -93,7 +94,7 @@ function draw_structure(structure, assembly_system; r=200, species_colors=nothin
     return
 end
 
-function draw_structures(structures, assembly_system; r=50, box_size=5, ncols=4, species_colors=nothing,
+function draw_polyforms(structures, assembly_system; r=50, box_size=5, ncols=4, species_colors=nothing,
                          structure_names=nothing)
     nstructures = length(structures)
     nrows = nstructures ÷ ncols
@@ -110,7 +111,7 @@ function draw_structures(structures, assembly_system; r=50, box_size=5, ncols=4,
         for (structure, (pos, n)) in zip(structures, tiles)
             @layer begin
                 Luxor.translate(pos)
-                draw_structure(structure, assembly_system; r=r, species_colors=species_colors)
+                draw_polyform(structure, assembly_system; r=r, species_colors=species_colors)
             end
             i += 1
         end
@@ -119,7 +120,7 @@ function draw_structures(structures, assembly_system; r=50, box_size=5, ncols=4,
         for (structure, (pos, n), name) in zip(structures, tiles, structure_names)
             @layer begin
                 Luxor.translate(pos)
-                draw_structure(structure; r=r, species_colors=species_colors)
+                draw_polyform(structure; r=r, species_colors=species_colors)
                 fontsize(r / 2)
                 Luxor.text(string(name), Point(-2 * r / 2, -3 * r / 2))
             end
@@ -128,12 +129,12 @@ function draw_structures(structures, assembly_system; r=50, box_size=5, ncols=4,
     end
 end
 
-macro structures_png(s, assembly_system, r=50, ncols=4, box_size=5, species_colors=default_colors, size=(1000, 1000),
-                     filename="figures/structures.png")
-    return :(@png draw_structures($s, $assembly_system, r=$r, box_size=$box_size, ncols=$ncols, species_colors=$species_colors) $(size)[1] $(size)[2] $filename)
+macro draw_polyform_png(s, assembly_system, r=50, ncols=4, box_size=5, species_colors=default_colors, size=(1000, 1000),
+                     filename="figures/polyforms.png")
+    return :(@png draw_polyforms($s, $assembly_system, r=$r, box_size=$box_size, ncols=$ncols, species_colors=$species_colors) $(size)[1] $(size)[2] $filename)
 end
 
-macro structures_pdf(s, assembly_system, r=50, ncols=4, box_size=5, species_colors=default_colors, size=(1000, 1000),
-                     filename="figures/structures.png")
-    return :(@pdf draw_structures($s, $assembly_system, r=$r, box_size=$box_size, ncols=$ncols, species_colors=$species_colors) $(size[1]) $(size[2]) $filename)
+macro draw_polyform_pdf(s, assembly_system, r=50, ncols=4, box_size=5, species_colors=default_colors, size=(1000, 1000),
+                     filename="figures/polyforms.png")
+    return :(@pdf draw_polyforms($s, $assembly_system, r=$r, box_size=$box_size, ncols=$ncols, species_colors=$species_colors) $(size[1]) $(size[2]) $filename)
 end
