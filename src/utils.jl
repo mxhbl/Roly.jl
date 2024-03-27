@@ -1,8 +1,23 @@
 using NautyGraphs
+using StaticArrays
 
 HashType = UInt
 DefInt, DefFloat = Int16, Float32
 SideLoc{T} = Tuple{T,T}  # Location of a binding site within a structure, in the form (particle, side)
+CVec{N,F} = Union{SVector{N,F},MVector{N,F}}
+
+
+function quaternion_multiply(ψi::AbstractVector, ψj::AbstractVector)
+    a, b, c, d = ψi
+    x, y, z, w = ψj
+
+    o = a*x - b*y - c*z - d*w
+    i = a*y + b*x + c*w - d*z
+    j = a*z - b*w + c*x + d*y
+    k = a*w + b*z - c*y + d*x
+    return SVector(o, i, j, k)
+end
+quaternion_inv(ψ::AbstractVector) = SVector(ψ[1], -ψ[2], -ψ[3], -ψ[4])
 
 function cart2pol(x::F, y::Real) where {F}
     y = convert(F, y)
@@ -12,7 +27,6 @@ function pol2cart(r::F, ψ::Real) where {F}
     ψ = convert(F, ψ)
     return [r * cos(π * ψ),  r * sin(π * ψ)]
 end
-
 
 function irg_flatten(a::Integer, b::Integer, intervals::AbstractVector{<:Integer})
     if a == 1

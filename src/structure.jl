@@ -129,7 +129,7 @@ function Base.:(==)(si::Structure, sj::Structure)
 end
 
 function Base.copy(s::Structure{T,F}) where {T,F}
-    return Structure{T,F}(copy(s.anatomy), copy(s.translator), copy(s.species), copy(s.positions), s.σ)
+    return Structure{T,F}(copy(s.anatomy), copy(s.translator), copy(s.species), deepcopy(s.positions), s.σ)
 end
 function Base.copy!(dest::Structure{T,F}, src::Structure{T,F}) where {T,F}
     copy!(dest.anatomy, src.anatomy)
@@ -147,5 +147,7 @@ function create_monomer(geometry::AbstractGeometry{T,F},
     return Structure{T,F}(DirectedDenseNautyGraph(geometry.anatomy, face_labels),
                           EncTranslator([collect(1:length(geometry))]),
                           [species_idx],
-                          Coordinates2D{F}([SA[0.0, 0.0]], Vector([0.0])))
+                        #   Coordinates2D{F}([SA[0.0, 0.0, 0.0]], [SA[1.0, 0.0, 0.0, 0.0]]))
+                          Coordinates2D{F}([SA[0.0, 0.0]], [0.0]))
+
 end

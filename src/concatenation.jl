@@ -112,6 +112,8 @@ function attach_monomer!(s::Structure{T,F}, bond::Tuple{<:Integer,<:Integer}, as
 
     Δx, Δψ = attachment_offset(T(face_i), T(face_j), geom_i, geom_j)
     ψj = Δψ + s.positions.ψs[i]
+    # ψj = quaternion_multiply(Δψ, s.positions.ψs[i])
+
     xj = s.positions.xs[i] + rotate(Δx, s.positions.ψs[i])
 
     anatomy_edges = Edge{Cint}[]

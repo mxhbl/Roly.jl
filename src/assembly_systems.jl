@@ -1,13 +1,13 @@
-struct AssemblySystem{T<:Integer, F<:AbstractFloat}
+struct AssemblySystem{T<:Integer, F<:AbstractFloat, G<:AbstractGeometry{T,F}}
     intmat::BitMatrix
     monomers::Vector{Structure{T,F}}
-    geometries::Vector{PolygonGeometry{T,F}}
+    geometries::Vector{G}
     n_species::Integer
     n_edges::Integer
     _sides_sum::Vector{T}
 end
 
-function AssemblySystem(interactions::AbstractMatrix{<:Integer}, geometries::Vector{<:AbstractGeometry{T,F}}, face_labels=nothing) where {T,F}
+function AssemblySystem(interactions::AbstractMatrix{<:Integer}, geometries::Vector{G}, face_labels=nothing) where {T,F,G<:AbstractGeometry{T,F}}
     interactions = convert(Matrix{T}, interactions)
     n_species = length(geometries)
 
@@ -38,7 +38,7 @@ function AssemblySystem(interactions::AbstractMatrix{<:Integer}, geometries::Vec
         interaction_matrix[i, j] = interaction_matrix[j, i] = true
     end
 
-    return AssemblySystem{T,F}(interaction_matrix, monomers, geometries, n_species, n_edges, sides_sum)
+    return AssemblySystem{T,F,G}(interaction_matrix, monomers, geometries, n_species, n_edges, sides_sum)
 end
 function AssemblySystem(interactions::AbstractMatrix{<:Integer}, geometry::AbstractGeometry{T,F}, face_labels=nothing) where {T,F}
     n_species = maximum(interactions[:, [1, 3]])
