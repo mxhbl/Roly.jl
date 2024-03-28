@@ -151,12 +151,12 @@ struct PolyhedronGeometry{F<:AbstractFloat} <: AbstractGeometry{F}
 
             corners = vec([a * SVector(i, j, k) for i in F[-1, 1], j in F[-1, 1], k in F[-1, 1]])
             θs_ref = [Quaternion{F}(1, 0, 0, 0),
-                      Quaternion{F}(0, 1, 0, 0),
+                      Quaternion{F}(0, 0, 1, 0),
                       inv(√2) * Quaternion{F}(1, 0, 1, 0),
                       inv(√2) * Quaternion{F}(1, 0, -1, 0),
                       inv(√2) * Quaternion{F}(1, 1, 0, 0),
                       inv(√2) * Quaternion{F}(1, -1, 0, 0)]
-            Δθs = [Quaternion{F}(0, 1, 0, 0),
+            Δθs = [Quaternion{F}(0, 0, 1, 0),
                    Quaternion{F}(1, 0, 0, 0),
                    inv(√2) * Quaternion{F}(1, 0, -1, 0),
                    inv(√2) * Quaternion{F}(1, 0, 1, 0),
