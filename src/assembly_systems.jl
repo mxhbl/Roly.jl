@@ -1,21 +1,22 @@
-struct AssemblySystem{T<:Integer, F<:AbstractFloat, G<:AbstractGeometry{T,F}}
+struct AssemblySystem{D, T<:Integer, F<:AbstractFloat, G<:AbstractGeometry{F}}
     intmat::BitMatrix
-    monomers::Vector{Polyform{T,F}}
+    monomers::Vector{Polyform{D,T,F}}
     geometries::Vector{G}
     n_species::Integer
     n_edges::Integer
     _sides_sum::Vector{T}
 end
 
-function AssemblySystem(interactions::AbstractMatrix{<:Integer}, geometries::Vector{G}, face_labels=nothing) where {T,F,G<:AbstractGeometry{T,F}}
-    interactions = convert(Matrix{T}, interactions)
+function AssemblySystem(interactions::AbstractMatrix{T}, geometries::Vector{G}, face_labels=nothing) where {T,F,G<:AbstractGeometry{F}}
+    D = geometry_dimension(first(geometries))
+
     n_species = length(geometries)
 
     sides = [length(geom) for geom in geometries]
     n_sides = sum(sides; init=0)
     n_edges = size(interactions, 1)
 
-    monomers = Polyform{T,F}[]
+    monomers = Polyform{D,T,F}[]
     sides_sum = cumsum(sides)
     last_label = 0
 
@@ -38,13 +39,13 @@ function AssemblySystem(interactions::AbstractMatrix{<:Integer}, geometries::Vec
         interaction_matrix[i, j] = interaction_matrix[j, i] = true
     end
 
-    return AssemblySystem{T,F,G}(interaction_matrix, monomers, geometries, n_species, n_edges, sides_sum)
+    return AssemblySystem{D,T,F,G}(interaction_matrix, monomers, geometries, n_species, n_edges, sides_sum)
 end
-function AssemblySystem(interactions::AbstractMatrix{<:Integer}, geometry::AbstractGeometry{T,F}, face_labels=nothing) where {T,F}
+function AssemblySystem(interactions::AbstractMatrix{<:Integer}, geometry::AbstractGeometry{F}, face_labels=nothing) where {T,F}
     n_species = maximum(interactions[:, [1, 3]])
     geometries = [geometry for _ in 1:n_species]
     return AssemblySystem(interactions, geometries, face_labels)
 end
 
 Base.size(A::AssemblySystem) = A.n_species, A.n_edges
-Base.show(io::Core.IO, A::AssemblySystem{T,F}) where {T, F} = println(io, "$(size(A)) AssemblySytem{$T,$F}")
+Base.show(io::Core.IO, A::AssemblySystem{D,T,F}) where {D,T,F} = println(io, "AssemblySytem{$D,$T,$F}[n=$(A.n_species), k=$(A.n_edges)]")

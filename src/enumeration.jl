@@ -38,8 +38,8 @@ end
 
 FnorNothing = Union{<:Function,Nothing}
 
-function polyrs(v₀::Polyform{T,F},
-                assembly_system::AssemblySystem{T,F},
+function polyrs(v₀::Polyform{D,T,F},
+                assembly_system::AssemblySystem{D,T,F},
                 reducer::FnorNothing,
                 reduce_op::FnorNothing,
                 aggregator::FnorNothing,
@@ -47,7 +47,7 @@ function polyrs(v₀::Polyform{T,F},
                 unexplored_channel::Union{<:AbstractChannel,<:RemoteChannel,Nothing}=nothing,
                 output_channel::Union{<:AbstractChannel,<:RemoteChannel,Nothing}=nothing,
                 max_depth::Int=0,
-                max_strs::Int=0) where {T,F}
+                max_strs::Int=0) where {D,T,F}
     reduction = !isnothing(reducer)
     if reduction
         reduce_val = reducer(v₀)
@@ -67,9 +67,9 @@ function polyrs(v₀::Polyform{T,F},
     depth = 0
     n_strs = 0
 
-    v = Polyform{T,F}()
-    u = Polyform{T,F}()
-    k = Polyform{T,F}()
+    v = Polyform{D,T,F}()
+    u = Polyform{D,T,F}()
+    k = Polyform{D,T,F}()
 
     copy!(v, v₀)
 
@@ -178,13 +178,13 @@ function polyrs(v₀::Polyform{T,F},
     end
 end
 
-function polyenum(assembly_system::AssemblySystem{T,F};
+function polyenum(assembly_system::AssemblySystem{D,T,F,G};
                   max_size::Number=Inf, max_strs::Number=Inf,
                   reducer::FnorNothing=nothing,
                   reduce_op::FnorNothing=nothing,
                   aggregator::FnorNothing=nothing,
-                  rejector::FnorNothing=nothing) where {T,F}
-    v₀ = Polyform{T,F}()
+                  rejector::FnorNothing=nothing) where {D,T,F,G}
+    v₀ = Polyform{D,T,F}()
     max_size = isinf(max_size) ? 0 : convert(Int, max_size)
     max_strs = isinf(max_strs) ? 0 : convert(Int, max_strs)
 
@@ -202,11 +202,11 @@ function polyenum(assembly_system::AssemblySystem{T,F};
 end
 
 
-function polygenerate(callback::Function, assembly_system::AssemblySystem{T,F};
-                      max_size=Inf, max_strs=Inf) where {T,F}
+function polygenerate(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
+                      max_size=Inf, max_strs=Inf) where {D,T,F,G}
     values = [callback(monomer) for monomer in assembly_system.monomers]
     hashes = Set{HashType}()
-    queue = Queue{Polyform{T,F}}()
+    queue = Queue{Polyform{D,T,F}}()
     open_bonds = Dict{HashType,Vector{Tuple{Int,Int}}}()
 
     for monomer in assembly_system.monomers
@@ -217,7 +217,7 @@ function polygenerate(callback::Function, assembly_system::AssemblySystem{T,F};
         open_bonds[hashval] = all_open_bonds(monomer, assembly_system.intmat)
     end
 
-    u = Polyform{T,F}()
+    u = Polyform{D,T,F}()
     n_strs = length(assembly_system.monomers)
 
     while !isempty(queue) && n_strs < max_strs

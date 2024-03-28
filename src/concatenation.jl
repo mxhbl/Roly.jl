@@ -1,5 +1,5 @@
-function concatenate_structures(poly_i::Polyform{T,F}, poly_j::Polyform{T,F}, loc_i::SideLoc{T},
-    loc_j::SideLoc{T}, assembly_system::AssemblySystem) where {T,F}
+function concatenate_structures(poly_i::Polyform{D,T,F}, poly_j::Polyform{D,T,F}, loc_i::SideLoc{T},
+    loc_j::SideLoc{T}, assembly_system::AssemblySystem) where {D,T,F}
 
     ni, _, nfi = convert(Tuple{T,T,T}, size(poly_i))
     geometries = assembly_system.geometries
@@ -50,7 +50,7 @@ function concatenate_structures(poly_i::Polyform{T,F}, poly_j::Polyform{T,F}, lo
     species = vcat(poly_i.species, poly_j.species)
     translator = vcat(poly_i.translator, poly_j.translator)
 
-    return Polyform{T,F}(anatomy, translator, species, positions)
+    return Polyform{D,T,F}(anatomy, translator, species, positions)
 end
 
 function open_bond(p::Polyform, j::Integer, interaction_matrix::AbstractMatrix)
@@ -97,7 +97,7 @@ function all_open_bonds(p::Polyform, interaction_matrix::AbstractMatrix)
     return bonds
 end
 
-function attach_monomer!(p::Polyform{T,F}, bond::Tuple{<:Integer,<:Integer}, assembly_system::AssemblySystem, fillhash::Bool=false) where {T,F}
+function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, assembly_system::AssemblySystem, fillhash::Bool=false) where {D,T,F}
     n, nk, nf = size(p)
     geometries = assembly_system.geometries
 
@@ -111,13 +111,13 @@ function attach_monomer!(p::Polyform{T,F}, bond::Tuple{<:Integer,<:Integer}, ass
     geom_j = geometries[species_j]
 
     Δx, Δψ = attachment_offset(T(face_i), T(face_j), geom_i, geom_j)
-    ψj = Δψ + p.positions.ψs[i]
-    # ψj = quaternion_multiply(Δψ, s.positions.ψs[i])
+    # ψj = Δψ + p.ψs[i]
+    ψj = Δψ * p.ψs[i]
 
-    xj = p.positions.xs[i] + rotate(Δx, p.positions.ψs[i])
+    xj = p.xs[i] + rotate(Δx, p.ψs[i])
 
     anatomy_edges = Edge{Cint}[]
-    for (i, (xi, ψi)) in enumerate(p.positions)
+    for (i, (xi, ψi)) in enumerate(zip(p.xs, p.ψs))
         cstat, pairs = contact_status(xj - xi, ψi, ψj, geometries[spec[i]], geom_j)
         # If the new structure is invalid, call grow! again with j->j+1
         if !cstat
@@ -148,8 +148,8 @@ function attach_monomer!(p::Polyform{T,F}, bond::Tuple{<:Integer,<:Integer}, ass
         add_edge!(p.anatomy, ae)
     end
 
-    push!(p.positions.xs, xj)
-    push!(p.positions.ψs, ψj)
+    push!(p.xs, xj)
+    push!(p.ψs, ψj)
 
     push!(p.species, species_j)
     p.translator = vcat(p.translator, assembly_system.monomers[species_j].translator)
@@ -163,7 +163,7 @@ function attach_monomer!(p::Polyform{T,F}, bond::Tuple{<:Integer,<:Integer}, ass
     return true
 end
 
-function grow!(p::Polyform{T,F}, k::Integer, assembly_system::AssemblySystem) where {T,F}
+function grow!(p::Polyform{D,T,F}, k::Integer, assembly_system::AssemblySystem) where {D,T,F}
     bond = open_bond(p, k, assembly_system.intmat)
     if isnothing(bond)
         return false, k
@@ -200,8 +200,8 @@ function shrink!(p::Polyform)
 
     idx = p.translator.bwd[1, end-k]
 
-    deleteat!(p.positions.xs, idx)
-    deleteat!(p.positions.ψs, idx)
+    deleteat!(p.xs, idx)
+    deleteat!(p.ψs, idx)
     deleteat!(p.species, idx)
     rem_vertices!(p.anatomy, p.translator.fwd[idx])
 

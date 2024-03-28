@@ -2,156 +2,166 @@ using StaticArrays
 using Graphs
 using LinearAlgebra
 
-abstract type AbstractCoordinates{F<:Real} end
+Point{D,F} = SVector{D,F}
+abstract type RotationOperator{F<:Real} end
 
-struct Coordinates2D{F<:AbstractFloat} <: AbstractCoordinates{F}
-    xs::Vector{MVector{2,F}}
-    ψs::Vector{F}
+struct Angle{F} <: RotationOperator{F}
+    θ::F
+    Angle{F}(θ) where {F} = new{F}(mod(θ, 2))
 end
-function Coordinates2D(xs::AbstractVector{SVector{2,F}}, ψs::Vector) where {F}
-    return Coordinates2D{F}(xs, convert.(F, ψs))
+Angle(θ::F) where {F<:Real} = Angle{F}(θ)
+Base.:(==)(a::Angle, b::Angle) = a.θ == b.θ
+Base.isapprox(a::Angle, b::Angle) = isapprox(a.θ, b.θ)
+Base.:*(ai::Angle{F}, aj::Angle) where {F} = Angle{F}(ai.θ + aj.θ)
+Base.inv(a::Angle{F}) where {F} = Angle{F}(-a.θ)
+Base.convert(::Type{Angle{F}}, a::Real) where {F} = Angle{F}(a)
+Base.convert(::Type{Angle{F}}, a::Angle) where {F} = Angle{F}(a.θ)
+
+struct Quaternion{F} <: RotationOperator{F}
+    w::F
+    x::F
+    y::F
+    z::F
+end
+Quaternion(w::F, x::F, y::F, z::F) where {F<:Real} = Quaternion{F}(w, x, y, z)
+Quaternion(w::Real, x::Real, y::Real, z::Real) = Quaternion(promote(w, x, y, z)...)
+Base.convert(::Type{Quaternion{F}}, v::AbstractVector) where {F} = Quaternion{F}(v[1:4]...)
+Base.convert(::Type{Quaternion{F}}, q::Quaternion) where {F} = Quaternion{F}(q.w, q.x, q.y, q.z)
+# Base.:(==)(a::Quaternion, b::Quaternion) = ...
+# Base.isapprox(a::Quaternion, b::Quaternion) = ...
+Base.inv(q::Quaternion) = Quaternion(q.w, -q.x, -q.y, -q.z)
+LinearAlgebra.norm(q::Quaternion) = sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z)
+
+function Base.:*(qi::Quaternion, qj::Quaternion)
+    a, b, c, d = qi.w, qi.x, qi.y, qi.z
+    w, x, y, z = qj.w, qj.x, qj.y, qj.z
+
+    o = a*w - b*x - c*y - d*z
+    i = a*x + b*w + c*z - d*y
+    j = a*y - b*z + c*w + d*x
+    k = a*z + b*y - c*x + d*w
+    return Quaternion(o, i, j, k)
+end
+Base.:*(α::Real, q::Quaternion) = Quaternion(α * q.w, α * q.x, α * q.y, α * q.z)
+Base.:/(q::Quaternion, α::Real) = inv(α) * q
+
+normalized(q::Quaternion) = inv(norm(q)) * q
+
+function rotate(x::Point{2,F}, ϕ::Angle{F}) where {F}
+    c, s = cospi(ϕ.θ), sinpi(ϕ.θ) #TODO: maybe refactor this into a method
+    return Point{2,F}(c * x[1] - s * x[2], s * x[1] + c * x[2])
+end
+function rotate(x::Point{3,F}, ϕ::Quaternion{F}) where {F}
+    xq = Quaternion(0, x[1], x[2], x[3])
+    xq = ϕ * xq * inv(ϕ)
+    return Point{3,F}(xq.x, xq.y, xq.z)
 end
 
-struct Coordinates3D{F<:AbstractFloat} <: AbstractCoordinates{F}
-    xs::Vector{MVector{3,F}}
-    ψs::Vector{MVector{4,F}}
-end
-function Coordinates3D(xs::AbstractVector{SVector{3,F}}, ψs::AbstractVector) where {F}
-    return Coordinates2D{F}(xs, convert.(F, ψs))
-end
-
-Base.length(cp::AbstractCoordinates) = length(cp.xs)
-Base.getindex(cp::AbstractCoordinates, i::Integer) = (cp.xs[i], cp.ψs[i])
-function Base.iterate(cp::AbstractCoordinates, state=1)
-    return state > length(cp) ? nothing : (cp[state], state + 1)
-end
-# Base.copy(qs::Coordinates2D{F}) where {F} = Coordinates2D{F}([copy(x) for x in qs.xs], copy(qs.ψs))
-function Base.copy!(dest::AbstractCoordinates{F}, src::AbstractCoordinates{F}) where {F}
-    copy!(dest.xs, src.xs)
-    copy!(dest.ψs, src.ψs)
-    return dest
-end
-Base.deepcopy(qs::C) where {C<:AbstractCoordinates} = C([copy(x) for x in qs.xs], [copy(ψ) for ψ in qs.ψs])
-Base.deepcopy(qs::Coordinates2D{F}) where {F} = Coordinates2D{F}([copy(x) for x in qs.xs], copy(qs.ψs))
-
-#TODO: make a non-deep version of vcat to save some memory
-#TODO: watch out for type stability here
-function Base.vcat(qi::C, qj::D) where {C<:AbstractCoordinates, D<:AbstractCoordinates}
-    return C(vcat(qi.xs, qj.xs), vcat(qi.ψs, qj.ψs))
-end
-
-function rotate(v::CVec{2,F}, ψ::F) where {F}
-    c, s = cos(π * ψ), sin(π * ψ)
-    return @SVector [c*v[1] - s*v[2], s*v[1] + c*v[2]]
-end
-function rotate(v::CVec{3,F}, ψ::CVec{4,F}) where {F}
-    vq = SVector(0, v[1], v[2], v[3])
-    return quaternion_multiply(quaternion_multiply(ψ, vq), quaternion_inv(ψ))[2:end]
-end
-
-function rotate!(qs::Coordinates2D{F}, ψ::F) where {F}
-    c, s = cos(π * ψ), sin(π * ψ)
-    for i in eachindex(qs.xs)
-        x = qs.xs[i][1]
-        y = qs.xs[i][2]
-        qs.xs[i][1] = c * x - s * y
-        qs.xs[i][2] = s * x + c * y
-
-        qs.ψs[i] = mod.(qs.ψs[i] .+ ψ, F(2.0))
+function rotate!(xs::AbstractVector{<:Point{2,F}}, ϕ::Angle{F}) where {F}
+    c, s = cospi(ϕ.θ), sinpi(ϕ.θ)
+    for i in eachindex(xs)
+        x, y = xs[i]
+        xs[i] = Point{2,F}(c * x - s * y, s * x + c * y)
     end
 end
-function rotate!(qs::Coordinates3D{F}, ψ::CVec{4, F}) where {F}
-    for i in eachindex(qs.xs)
-        qs.xs[i] .= rotate(qs.xs[i], ψ)
-        qs.ψs[i] = quaternion_multiply(ψ, qs.ψs[i])
+function rotate!(xs::AbstractVector{<:Point{3,F}}, ϕ::Quaternion{F}) where {F}
+    for i in eachindex(xs)
+        xs[i] = rotate(xs[i], ϕ)
     end
 end
 
-function shift!(qs::AbstractCoordinates, Δx::AbstractVector{F}) where {F}
-    for i in eachindex(qs.xs)
-        @views qs.xs[i] .+= Δx
+function shift!(xs::AbstractVector{<:Point}, Δx::Point)
+    for i in eachindex(xs)
+        @views xs[i] .+= Δx
     end
     return
 end
 
-function grab_at!(qs::AbstractCoordinates, i::Integer) where {F}
-    # Transforms qs such that particle i it at the origin with reference orientation
-    shift!(qs, deepcopy(-qs.xs[i]))
-    rotate!(qs, deepcopy(-qs.ψs[i]))
+function grab_at!(xs::AbstractVector{<:Point}, ψs::AbstractVector{<:RotationOperator}, i::Integer)
+    # Shifts and rotates a list of xs and ψs such that particle i is at the origin in reference orientation
+    Δx = -xs[i]
+    ϕ = inv(ψs[i])
+
+    shift!(xs, Δx)
+    rotate!(xs, ϕ)
+    ψs .= ϕ .* ψs
     return
 end
 
-abstract type AbstractGeometry{T<:Integer,F<:AbstractFloat} end
+abstract type AbstractGeometry{F<:AbstractFloat} end
 Base.length(geom::AbstractGeometry) = length(geom.xs)
 
-struct PolygonGeometry{T<:Integer,F<:AbstractFloat} <: AbstractGeometry{T,F}
-    xs::Vector{SVector{2,F}}                # Displacement vectors from the center to the binding sites
-    rs::Vector{F}                           # Distances of the side midpoints from center
-    θs::Vector{Rational{T}}                 # Angles of the side midpoints from reference axis (in units of π)
-    ϕs::Vector{F}                           # Angle between side and side-midpoint line (in units of π)
-    corners::Vector{SVector{2,F}}
+struct PolygonGeometry{F<:AbstractFloat} <: AbstractGeometry{F}
+    xs::Vector{Point{2,F}}                # Displacement vectors from the center to the binding sites
+    θs_ref::Vector{Angle{F}}              # Rotation necessary to rotate side i into reference position
+    Δθs::Vector{Angle{F}}                 # Rotation to be applied to the added particle (assumed to be in reference orientation) once attached to side i 
+    corners::Vector{Point{2,F}}
     anatomy::DirectedDenseNautyGraph{Cint}  # Oriented graph of the dual polyhedron associated with the bb symmetry group
+    R_min::F
     R_max::F
 
-    function PolygonGeometry(n::T, a::F) where {T<:Integer,F<:AbstractFloat}
+    function PolygonGeometry(n::Integer, a::F) where {F}
         r_in = convert(F, 0.5a * cot(π / n))
         r_out = convert(F, 0.5a * csc(π / n))
 
-        θs = [mod(-T(2) * i // n - T(1) // T(2), T(2)) for i in T(0):(n - T(1))]
-        ϕs = [T(1) // T(2) for _ in T(1):n]
+        # θs = [mod(-T(2) * i / n - T(1) / T(2), T(2)) for i in T(0):(n - T(1))]
+        # ϕs = [T(1) / T(2) for _ in T(1):n]
+        θs_ref = [Angle{F}(2/n * i) for i in 0:(n-1)]
+        Δθs = [Angle{F}(1 - 2/n*i) for i in 0:(n-1)]
 
-        rs = r_in * ones(T, n)
-        corners = [convert.(F, r_out * [cos(π * (θ + T(1) // n)), sin(π * (θ + T(1) // n))])
-                   for θ in θs]
+        rs = r_in * ones(F, n)
+        corners = [convert.(F, r_out * [cos(π * (θ.θ + 1/n)), sin(π * (θ.θ + 1/n))]) for θ in θs_ref] #TODO: clean up the θ.θ
 
-        R_max = maximum(norm.(corners))
-
+        xs = [SVector{2,F}(pol2cart(r, -θ.θ - 1/2)) for (r, θ) in zip(rs, θs_ref)]
         anatomy = DirectedDenseNautyGraph(cycle_digraph(n))
 
-        xs = [SVector{2,F}(pol2cart(r, θ)) for (r, θ) in zip(rs, θs)]
-        return new{T,F}(xs, rs, θs, ϕs, corners, anatomy, R_max)
+        R_min = minimum(norm.(xs))
+        R_max = maximum(norm.(corners))
+
+        # θs = [Angle(θ) for θ in θs]
+        # ϕs = [Angle(ϕ) for ϕ in ϕs]
+
+        return new{F}(xs, θs_ref, Δθs, corners, anatomy, R_min, R_max)
     end
 end
 
-const UnitTriangleGeometry = PolygonGeometry(DefInt(3), DefFloat(1.0))
-const UnitSquareGeometry = PolygonGeometry(DefInt(4), DefFloat(1.0))
-const UnitPentagonGeometry = PolygonGeometry(DefInt(5), DefFloat(1.0))
-const UnitHexagonGeometry = PolygonGeometry(DefInt(6), DefFloat(1.0))
+const UnitTriangleGeometry = PolygonGeometry(3, DefFloat(1.0))
+const UnitSquareGeometry = PolygonGeometry(4, DefFloat(1.0))
+const UnitPentagonGeometry = PolygonGeometry(5, DefFloat(1.0))
+const UnitHexagonGeometry = PolygonGeometry(6, DefFloat(1.0))
 
 
-# TODO:Remove T from all geometries
-struct PolyhedronGeometry{T<:Integer,F<:AbstractFloat} <: AbstractGeometry{T,F}
-    xs::Vector{SVector{3,F}}                # Displacement vectors from the center to the binding sites
-    rs::Vector{F}                           # Distances of the side midpoints from center
-    θs_ref::Vector{SVector{4,F}}             
-    Δθs::Vector{SVector{4,F}}              
-    corners::Vector{SVector{3,F}}
+struct PolyhedronGeometry{F<:AbstractFloat} <: AbstractGeometry{F}
+    xs::Vector{Point{3,F}}                # Displacement vectors from the center to the binding sites
+    θs_ref::Vector{Quaternion{F}}         # Rotation necessary to rotate side i into reference position   
+    Δθs::Vector{Quaternion{F}}            # Rotation to be applied to the added particle (assumed to be in reference orientation) once attached to side i 
+    corners::Vector{Point{3,F}}
     anatomy::DirectedDenseNautyGraph{Cint}  # Oriented graph of the dual polyhedron associated with the bb symmetry group
+    R_min::F
     R_max::F
 
     function PolyhedronGeometry(shape::Symbol, a::F) where {F<:AbstractFloat}
         if shape == :cube
-            xs = a * [SVector{3,F}(0, 0, -1),
-                      SVector{3,F}(0, 0, 1),
-                      SVector{3,F}(-1, 0, 0),
-                      SVector{3,F}(1, 0, 0),
-                      SVector{3,F}(0, -1, 0),
-                      SVector{3,F}(0, 1, 0)]
+            xs = a * [Point{3,F}(0, 0, -1),
+                      Point{3,F}(0, 0, 1),
+                      Point{3,F}(-1, 0, 0),
+                      Point{3,F}(1, 0, 0),
+                      Point{3,F}(0, -1, 0),
+                      Point{3,F}(0, 1, 0)]
 
-            rs = a * ones(F, 6)
             corners = vec([a * SVector(i, j, k) for i in F[-1, 1], j in F[-1, 1], k in F[-1, 1]])
-            θs_ref = [SVector{4, F}(1, 0, 0, 0),
-                      SVector{4, F}(0, 1, 0, 0),
-                      SVector{4, F}(1, 0, 1, 0) / √2,
-                      SVector{4, F}(1, 0, -1, 0) / √2,
-                      SVector{4, F}(1, 1, 0, 0) / √2,
-                      SVector{4, F}(1, -1, 0, 0) / √2]
-            Δθs = [SVector{4, F}(0, 1, 0, 0),
-                   SVector{4, F}(1, 0, 0, 0),
-                   SVector{4, F}(1, 0, -1, 0) / √2,
-                   SVector{4, F}(1, 0, 1, 0) / √2,
-                   SVector{4, F}(1, -1, 0, 0) / √2,
-                   SVector{4, F}(1, 1, 0, 0) / √2]
+            θs_ref = [Quaternion{F}(1, 0, 0, 0),
+                      Quaternion{F}(0, 1, 0, 0),
+                      inv(√2) * Quaternion{F}(1, 0, 1, 0),
+                      inv(√2) * Quaternion{F}(1, 0, -1, 0),
+                      inv(√2) * Quaternion{F}(1, 1, 0, 0),
+                      inv(√2) * Quaternion{F}(1, -1, 0, 0)]
+            Δθs = [Quaternion{F}(0, 1, 0, 0),
+                   Quaternion{F}(1, 0, 0, 0),
+                   inv(√2) * Quaternion{F}(1, 0, -1, 0),
+                   inv(√2) * Quaternion{F}(1, 0, 1, 0),
+                   inv(√2) * Quaternion{F}(1, -1, 0, 0),
+                   inv(√2) * Quaternion{F}(1, 1, 0, 0)]
 
             adjmx = [0 0 1 1 0 0;
                      0 0 1 1 0 0;
@@ -160,62 +170,46 @@ struct PolyhedronGeometry{T<:Integer,F<:AbstractFloat} <: AbstractGeometry{T,F}
                      1 1 0 0 0 0;
                      1 1 0 0 0 0]
             anatomy = DirectedDenseNautyGraph(adjmx)
-            R_max = maximum(rs)
+
+            R_min = minimum(norm.(xs))
+            R_max = maximum(norm.(corners))
         else
             error("Shape $shape not supported.")
         end
         
-        return new{DefInt,F}(xs, rs, θs_ref, Δθs, corners, anatomy, R_max)
+        return new{F}(xs, θs_ref, Δθs, corners, anatomy, R_min, R_max)
     end
 end
 
 const UnitCubeGeometry = PolyhedronGeometry(:cube, DefFloat(1.))
 #TODO Implement basic 3d shapes: Platonic solids and polygon extrusions
 
-# struct MeshGeometry{T<:Int, R<:Real}<:AbstractGeometry
-#     rs::Vector{R}               # Distances of the side midpoints from center
-#     θs::Vector{R}               # Angles of the side midpoints from reference axis (in units of π)
-#     ϕs::Vector{R}               # Angle between side and side-midpoint line (in units of π)
-#     mesh::Vector{SVector{2,R}}  # Mesh of the building block (used for overlap checks)
-#     anatomy::DiGraph{T}           # Oriented graph of the dual polyhedron associated with the bb symmetry group
-# end
-
-
+geometry_dimension(::PolygonGeometry) = 2
+geometry_dimension(::PolyhedronGeometry) = 3
 
 
 function attachment_offset(face_i::Integer, face_j::Integer,
-                           geom_i::PolygonGeometry{T,F},
-                           geom_j::PolygonGeometry) where {T,F}
-    x_i, θ_i, ϕ_i = geom_i.xs[face_i], geom_i.θs[face_i], geom_i.ϕs[face_i]
-    x_j, θ_j, ϕ_j = geom_j.xs[face_j], geom_j.θs[face_j], geom_j.ϕs[face_j]
-
-    Δx = x_i + rotate(x_j, θ_i - θ_j + ϕ_i - ϕ_j)
-    Δψ = mod(θ_i - θ_j + ϕ_i - ϕ_j + T(1), T(2))
-    return Δx, Δψ
-end
-function attachment_offset(face_i::Integer, face_j::Integer,
-                           geom_i::PolyhedronGeometry{T,F},
-                           geom_j::PolyhedronGeometry) where {T,F}
+                           geom_i::AbstractGeometry,
+                           geom_j::AbstractGeometry)
     x_i, Δθ = geom_i.xs[face_i], geom_i.Δθs[face_i]
     x_j, θ_ref = geom_j.xs[face_j], geom_j.θs_ref[face_j]
 
-    Δx = x_i - rotate(x_j, quaternion_multiply(Δθ, θ_ref))
-    Δψ = quaternion_multiply(Δθ, θ_ref)
+    Δψ = Δθ * θ_ref
+    Δx = x_i - rotate(x_j, Δψ)
     return Δx, Δψ
 end
 
-# TODO: this function is susceptible to roundoff errors, we very careful with thresh
-function face_pairs(Δx::AbstractVector{F}, ψ_i, ψ_j, geom_i::AbstractGeometry{T,F}, geom_j::AbstractGeometry,
-                    convex=false, thresh=1e-2) where {T,F}
-    pairs = Tuple{T,T}[]
+# TODO: this function is susceptible to roundoff errors, be very careful with thresh
+function face_pairs(Δx::Point{D,F}, ψi::RotationOperator{F}, ψj::RotationOperator{F}, geom_i::AbstractGeometry{F}, geom_j::AbstractGeometry, convex=false, thresh=1e-2) where {D,F}
+    pairs = Tuple{Int,Int}[]
 
     for (i, z_i) in enumerate(geom_i.xs), (j, z_j) in enumerate(geom_j.xs)
-        z_i = rotate(z_i, ψ_i)
-        z_j = rotate(z_j, ψ_j)
+        z_i = rotate(z_i, ψi)
+        z_j = rotate(z_j, ψj)
 
         matching = maximum(abs, z_i - z_j - Δx) < F(thresh)
         if matching
-            push!(pairs, (T(i), T(j)))
+            push!(pairs, (i, j))
             if convex
                 break
             end
@@ -226,19 +220,19 @@ end
 
 function overlap(Δx, ψ_i, ψ_j, geom_i, geom_j; buffer=0.1)
     # Assumes lattice!!
-    return norm(Δx) < 2geom_i.rs[1] - buffer
+    return norm(Δx) < 2geom_i.R_min - buffer
     # return __check_overlap(geom_i.mesh, transform(geom_j.mesh, Δx, Δψ))
 end
 
-function contact_status(Δx::AbstractVector{F}, ψ_i, ψ_j, geom_i::AbstractGeometry{T,F}, geom_j::AbstractGeometry{T,F}) where {T,F}
+function contact_status(Δx::Point, ψi::RotationOperator, ψj::RotationOperator, geom_i::AbstractGeometry, geom_j::AbstractGeometry)
     if norm(Δx) > geom_i.R_max + geom_j.R_max
-        return true, Tuple{T,T}[]
+        return true, Tuple{Int,Int}[]
     end
 
-    if overlap(Δx, ψ_i, ψ_j, geom_i, geom_j)
-        return false, Tuple{T,T}[]
+    if overlap(Δx, ψi, ψj, geom_i, geom_j)
+        return false, Tuple{Int,Int}[]
     end
 
-    pairs = face_pairs(Δx, ψ_i, ψ_j, geom_i, geom_j)
+    pairs = face_pairs(Δx, ψi, ψj, geom_i, geom_j)
     return true, pairs
 end
