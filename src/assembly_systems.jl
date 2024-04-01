@@ -8,7 +8,9 @@ struct AssemblySystem{D, T<:Integer, F<:AbstractFloat, G<:AbstractGeometry{F}}
 end
 
 function AssemblySystem(interactions::AbstractMatrix{T}, geometries::Vector{G}, face_labels=nothing) where {T,F,G<:AbstractGeometry{F}}
-    D = geometry_dimension(first(geometries))
+    ds = [geometry_dimension(g) for g in geometries]
+    D = first(ds)
+    @assert all(ds .== D)
 
     n_species = length(geometries)
 
