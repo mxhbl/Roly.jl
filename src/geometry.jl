@@ -104,8 +104,6 @@ struct PolygonGeometry{F<:AbstractFloat} <: AbstractGeometry{F}
         r_in = convert(F, 0.5a * cot(π / n))
         r_out = convert(F, 0.5a * csc(π / n))
 
-        # θs = [mod(-T(2) * i / n - T(1) / T(2), T(2)) for i in T(0):(n - T(1))]
-        # ϕs = [T(1) / T(2) for _ in T(1):n]
         θs_ref = [Angle{F}(2/n * i) for i in 0:(n-1)]
         Δθs = [Angle{F}(1 - 2/n*i) for i in 0:(n-1)]
 
@@ -117,9 +115,6 @@ struct PolygonGeometry{F<:AbstractFloat} <: AbstractGeometry{F}
 
         R_min = minimum(norm.(xs))
         R_max = maximum(norm.(corners))
-
-        # θs = [Angle(θ) for θ in θs]
-        # ϕs = [Angle(ϕ) for ϕ in ϕs]
 
         return new{F}(xs, θs_ref, Δθs, corners, anatomy, R_min, R_max)
     end
