@@ -20,7 +20,7 @@ mutable struct Polyform{D,T<:Integer,F<:AbstractFloat,R<:RotationOperator{F}}
         end
     end
 end
-Base.show(io::Core.IO, ::Type{Polyform{D,T,F}}) where {D,T,F} = println(io, "Polyform{$D,$T,$F}")
+Base.show(io::Core.IO, ::Type{Polyform{D,T,F}}) where {D,T,F} = print(io, "Polyform{$D,$T,$F}")
 function Polyform{D,T,F}(anatomy, translator, species, xs, ψs) where {D,T,F}
     p = Polyform{D,T,F}(anatomy, translator, species, xs, ψs, 0)
     canonize!(p)
@@ -58,7 +58,7 @@ function Base.size(p::Polyform)
 end #  TODO: nbonds only valid in 2D
 function Base.show(io::IO, p::Polyform{D,T,F}) where {D,T,F}
     let (n, m, _) = size(p)
-        println(io, "Polyform{$D,$T,$F}[n=$n, k=$m]")
+        print(io, "Polyform{$D,$T,$F}[n=$n, k=$m]")
     end
 end
 

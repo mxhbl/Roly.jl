@@ -50,4 +50,4 @@ function AssemblySystem(interactions::AbstractMatrix{<:Integer}, geometry::Abstr
 end
 
 Base.size(A::AssemblySystem) = A.n_species, A.n_edges
-Base.show(io::Core.IO, A::AssemblySystem{D,T,F}) where {D,T,F} = println(io, "AssemblySytem{$D,$T,$F}[n=$(A.n_species), k=$(A.n_edges)]")
+Base.show(io::Core.IO, A::AssemblySystem{D,T,F}) where {D,T,F} = print(io, "AssemblySytem{$D,$T,$F}[n=$(A.n_species), k=$(A.n_edges)]")
