@@ -20,6 +20,25 @@ mutable struct Polyform{D,T<:Integer,F<:AbstractFloat,R<:RotationOperator{F}}
         end
     end
 end
+anatomy(p::Polyform) = p.anatomy
+faces(::Type{T}, p::Polyform) where {T} = convert(Vector{T}, p.anatomy.labels)
+faces(p::Polyform) = p.anatomy.labels
+species(::Type{T}, p::Polyform) where {T} = convert(Vector{T}, p.species)
+species(p::Polyform) = p.species
+symmetry_number(p::Polyform) = p.σ
+positions(p::Polyform) = p.xs
+orientations(p::Polyform) = p.ψs
+
+function Base.size(p::Polyform)
+    e = ne(p.anatomy)
+    v = nv(p.anatomy)
+    return length(p.xs), (e - v) ÷ 2, v
+end #  TODO: nbonds only valid in 2D
+function Base.show(io::Core.IO, p::Polyform{D,T,F}) where {D,T,F}
+    let (n, m, _) = size(p)
+        print(io, "Polyform{$D,$T,$F}[n=$n, k=$m]")
+    end
+end
 Base.show(io::Core.IO, ::Type{Polyform{D,T,F}}) where {D,T,F} = print(io, "Polyform{$D,$T,$F}")
 function Polyform{D,T,F}(anatomy, translator, species, xs, ψs) where {D,T,F}
     p = Polyform{D,T,F}(anatomy, translator, species, xs, ψs, 0)
@@ -45,21 +64,6 @@ function canonize!(p::Polyform)
     permute!(p.translator, canon_perm)
     p.σ = n
     return
-end
-
-faces(::Type{T}, p::Polyform) where {T} = convert(Vector{T}, p.anatomy.labels)
-faces(p::Polyform) = p.anatomy.labels
-species(p::Polyform) = p.species
-
-function Base.size(p::Polyform)
-    e = ne(p.anatomy)
-    v = nv(p.anatomy)
-    return length(p.xs), (e - v) ÷ 2, v
-end #  TODO: nbonds only valid in 2D
-function Base.show(io::IO, p::Polyform{D,T,F}) where {D,T,F}
-    let (n, m, _) = size(p)
-        print(io, "Polyform{$D,$T,$F}[n=$n, k=$m]")
-    end
 end
 
 function Base.hash(p::Polyform)
