@@ -3,14 +3,14 @@ using StaticArrays
 using Graphs
 using NautyGraphs
 
-mutable struct _Polyform{D,T<:Integer,F<:AbstractFloat,R<:RotationOperator{F}}
+mutable struct Polyform{D,T<:Integer,F<:AbstractFloat,R<:RotationOperator{F}}
     anatomy::DirectedDenseNautyGraph{Cint}
     translator::EncTranslator{Int}
     species::Vector{T}
-    xs::Vector{SVector{D,F}}
+    xs::Vector{Point{D,F}}
     ψs::Vector{R}
     σ::T
-    function _Polyform{D,T,F}(anatomy, translator, species, xs, ψs, σ) where {D,T,F}
+    function Polyform{D,T,F}(anatomy, translator, species, xs, ψs, σ) where {D,T,F}
         if D == 2
             return new{D,T,F,Angle{F}}(anatomy, translator, species, xs, ψs, σ)
         elseif D == 3
@@ -20,10 +20,9 @@ mutable struct _Polyform{D,T<:Integer,F<:AbstractFloat,R<:RotationOperator{F}}
         end
     end
 end
-Polyform{D,T,F} = _Polyform{D,T,F,R} where R
-Polyform{D,T,F}(args...) where {D,T,F} = _Polyform{D,T,F}(args...)
+Base.show(io::Core.IO, ::Type{Polyform{D,T,F}}) where {D,T,F} = println(io, "Polyform{$D,$T,$F}")
 function Polyform{D,T,F}(anatomy, translator, species, xs, ψs) where {D,T,F}
-    p = _Polyform{D,T,F}(anatomy, translator, species, xs, ψs, 0)
+    p = Polyform{D,T,F}(anatomy, translator, species, xs, ψs, 0)
     canonize!(p)
     return p
 end 
@@ -97,7 +96,7 @@ function create_monomer(geometry::AbstractGeometry{F},
         xs = [Point{3,F}(0., 0., 0.)]
         ψs = [Quaternion{F}(1., 0., 0., 0.)]
     else
-        error("Polyforms are only implemented for dimension 2,3.")
+        error("Polyforms are only implemented for dimension 2 and 3.")
     end
 
     return Polyform(DirectedDenseNautyGraph(geometry.anatomy, face_labels),
