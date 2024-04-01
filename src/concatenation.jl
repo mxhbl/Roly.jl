@@ -1,58 +1,3 @@
-function concatenate_structures(poly_i::Polyform{D,T,F}, poly_j::Polyform{D,T,F}, loc_i::SideLoc{T},
-    loc_j::SideLoc{T}, assembly_system::AssemblySystem) where {D,T,F}
-
-    ni, _, nfi = convert(Tuple{T,T,T}, size(poly_i))
-    geometries = assembly_system.geometries
-    interaction_matrix = assembly_system.intmat
-
-    i, face_i = loc_i
-    j, face_j = loc_j
-
-    species_i = poly_i.species
-    species_j = poly_j.species
-
-    Δx, Δψ = attachment_offset(face_i, face_j, geometries[species_i[i]], geometries[species_j[j]])
-    qi = poly_i.positions
-
-    qj = deepcopy(poly_j.positions)
-    grab_at!(qj, j)
-    rotate!(qj, qi.ψs[i] + Δψ)
-    shift!(qj, qi.xs[i] + rotate(Δx, qi.ψs[i]))
-
-    anatomy = blockdiag(poly_i.anatomy, poly_j.anatomy)
-
-    for (i, (xi, ψi)) in enumerate(qi)
-        for (j, (xj, ψj)) in enumerate(qj)
-            cstat, pairs = contact_status(xj - xi, ψi, ψj, geometries[species_i[i]], geometries[species_j[j]])
-            if !cstat
-                return nothing
-            end
-            for pair in pairs
-                fi, fj = pair
-
-                ai = poly_i.translator.fwd[i][fi]
-                aj = poly_j.translator.fwd[j][fj]
-
-                li = poly_i.anatomy.labels[ai]
-                lj = poly_j.anatomy.labels[aj]
-
-                if !interaction_matrix[li, lj]
-                    return nothing
-                end
-                
-                add_edge!(anatomy, Edge(ai, aj+nfi))
-                add_edge!(anatomy, Edge(aj+nfi, ai)) # Reverse
-            end
-        end
-    end
-
-    positions = vcat(qi, qj)
-    species = vcat(poly_i.species, poly_j.species)
-    translator = vcat(poly_i.translator, poly_j.translator)
-
-    return Polyform{D,T,F}(anatomy, translator, species, positions)
-end
-
 function open_bond(p::Polyform, j::Integer, interaction_matrix::AbstractMatrix)
     n = nv(p.anatomy)
     fs = faces(p)
@@ -111,9 +56,7 @@ function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, a
     geom_j = geometries[species_j]
 
     Δx, Δψ = attachment_offset(T(face_i), T(face_j), geom_i, geom_j)
-    # ψj = Δψ + p.ψs[i]
     ψj = Δψ * p.ψs[i]
-
     xj = p.xs[i] + rotate(Δx, p.ψs[i])
 
     anatomy_edges = Edge{Cint}[]
