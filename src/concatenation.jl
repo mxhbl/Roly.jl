@@ -73,7 +73,7 @@ function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, a
             ai = p.translator.fwd[i][fi]
             aj = fj
             li = p.anatomy.labels[ai]
-            lj = assembly_system.monomers[species_j].anatomy.labels[aj]
+            lj = assembly_system.buildingblocks[species_j].anatomy.labels[aj]
 
             if !assembly_system.intmat[li, lj]
                 # println("blocked bond")
@@ -86,7 +86,7 @@ function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, a
         end
     end
 
-    NautyGraphs.blockdiag!(p.anatomy, assembly_system.monomers[species_j].anatomy)
+    NautyGraphs.blockdiag!(p.anatomy, assembly_system.buildingblocks[species_j].anatomy)
     for ae in anatomy_edges
         add_edge!(p.anatomy, ae)
     end
@@ -95,7 +95,7 @@ function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, a
     push!(p.ψs, ψj)
 
     push!(p.species, species_j)
-    p.translator = vcat(p.translator, assembly_system.monomers[species_j].translator)
+    p.translator = vcat(p.translator, assembly_system.buildingblocks[species_j].translator)
     #TODO MAKE THIS PRETTY, THIS WILL CANONIZE A STRUCTURE TWICE IF GROW! is CALLED
     if fillhash
         _, n = NautyGraphs._fill_hash!(p.anatomy)

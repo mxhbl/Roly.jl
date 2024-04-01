@@ -18,11 +18,11 @@ function adj!(u::Polyform{T,F}, v::Polyform{T,F}, j::Integer, hashes::Vector{Has
     ### TODO: We should exploit that canonical labels are guaranteed (see Nauty User Guide p.4) to be in order of color
     ### So, if we know the color of the particle that would be removed, we can filter the possible offspring
     if size(v)[1] == 0
-        if j > length(assembly_system.monomers)
+        if j > length(assembly_system.buildingblocks)
             return false, j + 1
         end
 
-        copy!(u, assembly_system.monomers[j])
+        copy!(u, assembly_system.buildingblocks[j])
         return true, j + 1
     end
 
@@ -204,12 +204,12 @@ end
 
 function polygenerate(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
                       max_size=Inf, max_strs=Inf) where {D,T,F,G}
-    values = [callback(monomer) for monomer in assembly_system.monomers]
+    values = [callback(monomer) for monomer in assembly_system.buildingblocks]
     hashes = Set{HashType}()
     queue = Queue{Polyform{D,T,F}}()
     open_bonds = Dict{HashType,Vector{Tuple{Int,Int}}}()
 
-    for monomer in assembly_system.monomers
+    for monomer in assembly_system.buildingblocks
         hashval = hash(monomer)
 
         enqueue!(queue, monomer)
@@ -218,7 +218,7 @@ function polygenerate(callback::Function, assembly_system::AssemblySystem{D,T,F,
     end
 
     u = Polyform{D,T,F}()
-    n_strs = length(assembly_system.monomers)
+    n_strs = length(assembly_system.buildingblocks)
 
     while !isempty(queue) && n_strs < max_strs
         v = dequeue!(queue)
@@ -242,7 +242,7 @@ function polygenerate(callback::Function, assembly_system::AssemblySystem{D,T,F,
             species_j, aj =  irg_unflatten(j, assembly_system._sides_sum)
             hashval = hash(next)
 
-            monomer_opens = open_bonds[hash(assembly_system.monomers[species_j])]
+            monomer_opens = open_bonds[hash(assembly_system.buildingblocks[species_j])]
             new_opens = [b .+ (nfv, 0) for b in monomer_opens if b[1] != aj]
             open_bonds[hashval] = filter(x -> x ∉ bonds && x[1] != ai, open_bonds_v)
             append!(open_bonds[hashval], new_opens)

@@ -1,6 +1,6 @@
 struct AssemblySystem{D, T<:Integer, F<:AbstractFloat, G<:AbstractGeometry{F}}
     intmat::BitMatrix
-    monomers::Vector{Polyform{D,T,F}}
+    buildingblocks::Vector{Polyform{D,T,F}}
     geometries::Vector{G}
     n_species::Integer
     n_edges::Integer
