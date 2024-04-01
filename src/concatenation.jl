@@ -44,7 +44,8 @@ end
 
 function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, assembly_system::AssemblySystem, fillhash::Bool=false) where {D,T,F}
     n, nk, nf = size(p)
-    geometries = assembly_system.geometries
+    geoms = geometries(assembly_system)
+    bblocks = buildingblocks(assembly_system)
 
     ai, j = bond
     i, face_i = @view p.translator.bwd[:, ai]
@@ -52,8 +53,8 @@ function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, a
 
     spec = species(p)
     sp_i = species(p)[i]
-    geom_i = geometries[sp_i]
-    geom_j = geometries[species_j]
+    geom_i = geoms[sp_i]
+    geom_j = geoms[species_j]
 
     Δx, Δψ = attachment_offset(T(face_i), T(face_j), geom_i, geom_j)
     ψj = Δψ * p.ψs[i]
@@ -61,7 +62,7 @@ function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, a
 
     anatomy_edges = Edge{Cint}[]
     for (i, (xi, ψi)) in enumerate(zip(p.xs, p.ψs))
-        cstat, pairs = contact_status(xj - xi, ψi, ψj, geometries[spec[i]], geom_j)
+        cstat, pairs = contact_status(xj - xi, ψi, ψj, geoms[spec[i]], geom_j)
         # If the new structure is invalid, call grow! again with j->j+1
         if !cstat
             # println("overlap")
@@ -73,9 +74,9 @@ function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, a
             ai = p.translator.fwd[i][fi]
             aj = fj
             li = p.anatomy.labels[ai]
-            lj = assembly_system.buildingblocks[species_j].anatomy.labels[aj]
+            lj = bblocks[species_j].anatomy.labels[aj]
 
-            if !assembly_system.intmat[li, lj]
+            if !interaction_matrix(assembly_system)[li, lj]
                 # println("blocked bond")
                 return false
             end
@@ -86,7 +87,7 @@ function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, a
         end
     end
 
-    NautyGraphs.blockdiag!(p.anatomy, assembly_system.buildingblocks[species_j].anatomy)
+    NautyGraphs.blockdiag!(p.anatomy, bblocks[species_j].anatomy)
     for ae in anatomy_edges
         add_edge!(p.anatomy, ae)
     end
@@ -95,7 +96,7 @@ function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, a
     push!(p.ψs, ψj)
 
     push!(p.species, species_j)
-    p.translator = vcat(p.translator, assembly_system.buildingblocks[species_j].translator)
+    p.translator = vcat(p.translator, bblocks[species_j].translator)
     #TODO MAKE THIS PRETTY, THIS WILL CANONIZE A STRUCTURE TWICE IF GROW! is CALLED
     if fillhash
         _, n = NautyGraphs._fill_hash!(p.anatomy)
@@ -107,7 +108,7 @@ function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, a
 end
 
 function grow!(p::Polyform{D,T,F}, k::Integer, assembly_system::AssemblySystem) where {D,T,F}
-    bond = open_bond(p, k, assembly_system.intmat)
+    bond = open_bond(p, k, interaction_matrix(assembly_system))
     if isnothing(bond)
         return false, k
     end

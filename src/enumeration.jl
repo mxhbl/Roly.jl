@@ -17,12 +17,13 @@ function adj!(u::Polyform{T,F}, v::Polyform{T,F}, j::Integer, hashes::Vector{Has
               assembly_system::AssemblySystem) where {T,F}
     ### TODO: We should exploit that canonical labels are guaranteed (see Nauty User Guide p.4) to be in order of color
     ### So, if we know the color of the particle that would be removed, we can filter the possible offspring
+    bblocks = buildingblocks(assembly_system)
     if size(v)[1] == 0
-        if j > length(assembly_system.buildingblocks)
+        if j > length(bblocks)
             return false, j + 1
         end
 
-        copy!(u, assembly_system.buildingblocks[j])
+        copy!(u, bblocks[j])
         return true, j + 1
     end
 
@@ -204,21 +205,23 @@ end
 
 function polygenerate(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
                       max_size=Inf, max_strs=Inf) where {D,T,F,G}
-    values = [callback(monomer) for monomer in assembly_system.buildingblocks]
+    bblocks = buildingblocks(assembly_system)
+
+    values = [callback(monomer) for monomer in bblocks]
     hashes = Set{HashType}()
     queue = Queue{Polyform{D,T,F}}()
     open_bonds = Dict{HashType,Vector{Tuple{Int,Int}}}()
 
-    for monomer in assembly_system.buildingblocks
+    for monomer in bblocks
         hashval = hash(monomer)
 
         enqueue!(queue, monomer)
         push!(hashes, hashval)
-        open_bonds[hashval] = all_open_bonds(monomer, assembly_system.intmat)
+        open_bonds[hashval] = all_open_bonds(monomer, interaction_matrix(assembly_system))
     end
 
     u = Polyform{D,T,F}()
-    n_strs = length(assembly_system.buildingblocks)
+    n_strs = length(bblocks)
 
     while !isempty(queue) && n_strs < max_strs
         v = dequeue!(queue)
@@ -242,7 +245,7 @@ function polygenerate(callback::Function, assembly_system::AssemblySystem{D,T,F,
             species_j, aj =  irg_unflatten(j, assembly_system._sides_sum)
             hashval = hash(next)
 
-            monomer_opens = open_bonds[hash(assembly_system.buildingblocks[species_j])]
+            monomer_opens = open_bonds[hash(bblocks[species_j])]
             new_opens = [b .+ (nfv, 0) for b in monomer_opens if b[1] != aj]
             open_bonds[hashval] = filter(x -> x ∉ bonds && x[1] != ai, open_bonds_v)
             append!(open_bonds[hashval], new_opens)

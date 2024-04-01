@@ -6,6 +6,12 @@ struct AssemblySystem{D, T<:Integer, F<:AbstractFloat, G<:AbstractGeometry{F}}
     n_edges::Integer
     _sides_sum::Vector{T}
 end
+interaction_matrix(sys::AssemblySystem) = sys.intmat
+intmat(sys::AssemblySystem) = interaction_matrix(sys)
+buildingblocks(sys::AssemblySystem) = sys.buildingblocks
+geometries(sys::AssemblySystem) = sys.geometries
+Base.size(sys::AssemblySystem) = sys.n_species, sys.n_edges
+Base.show(io::Core.IO, A::AssemblySystem{D,T,F}) where {D,T,F} = print(io, "AssemblySytem{$D,$T,$F}[n=$(A.n_species), k=$(A.n_edges)]")
 
 function AssemblySystem(interactions::AbstractMatrix{T}, geometries::Vector{G}, face_labels=nothing) where {T,F,G<:AbstractGeometry{F}}
     ds = [geometry_dimension(g) for g in geometries]
@@ -48,6 +54,3 @@ function AssemblySystem(interactions::AbstractMatrix{<:Integer}, geometry::Abstr
     geometries = [geometry for _ in 1:n_species]
     return AssemblySystem(interactions, geometries, face_labels)
 end
-
-Base.size(A::AssemblySystem) = A.n_species, A.n_edges
-Base.show(io::Core.IO, A::AssemblySystem{D,T,F}) where {D,T,F} = print(io, "AssemblySytem{$D,$T,$F}[n=$(A.n_species), k=$(A.n_edges)]")
