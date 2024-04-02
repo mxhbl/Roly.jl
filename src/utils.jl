@@ -1,6 +1,5 @@
 using NautyGraphs
 using StaticArrays
-using ElasticArrays
 
 HashType = UInt
 DefInt, DefFloat = Int16, Float32
