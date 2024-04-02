@@ -117,7 +117,7 @@ function Base.deleteat!(enc::PolyEncoder, i::Integer)
     enc.n_vertices -= length(del_vs)
     return
 end
-# Base.copy(enc::PolyEncoder) = PolyEncoder(deepcopy(enc.fwd), copy(enc.bwd)) # TODO: watch the deepcopy
+Base.copy(enc::PolyEncoder) = PolyEncoder(deepcopy(enc.fwd), copy(enc.bwd)) # TODO: watch the deepcopy
 function Base.copy!(dest::PolyEncoder{T}, src::PolyEncoder{T}) where {T}
     resize!(dest.fwd, src.n_particles)
     for i in eachindex(dest.fwd)
@@ -130,7 +130,7 @@ function Base.copy!(dest::PolyEncoder{T}, src::PolyEncoder{T}) where {T}
         end
     end
     # dest.fwd .= [copy.(part) for part in src.fwd]
-    
+
     # resize!(dest.bwd, size(src.bwd))
     dest.bwd = copy(src.bwd)
     dest.n_particles = src.n_particles

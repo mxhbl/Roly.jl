@@ -87,7 +87,7 @@ function Base.:(==)(si::Polyform, sj::Polyform)
 end
 
 function Base.copy(p::Polyform)
-    return Polyform(copy(p.anatomy), copy(p.encoder), copy(p.species), copy(p.xs), copy(p.ψs), p.σ)
+    return Polyform(copy(p.anatomy), copy(p.encoder), copy(p.bond_partners), copy(p.species), copy(p.xs), copy(p.ψs), p.σ)
 end
 function Base.copy!(dest::Polyform{D,T,F}, src::Polyform{D,T,F}) where {D,T,F}
     copy!(dest.anatomy, src.anatomy)
