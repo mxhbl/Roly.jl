@@ -36,7 +36,7 @@ end
 
 mutable struct PolyEncoder{T}
     fwd::Vector{Vector{Vector{T}}}
-    bwd::ElasticMatrix{T}
+    bwd::Matrix{T}
     n_particles::T
     n_vertices::T
 
@@ -130,8 +130,9 @@ function Base.copy!(dest::PolyEncoder{T}, src::PolyEncoder{T}) where {T}
         end
     end
     # dest.fwd .= [copy.(part) for part in src.fwd]
-    resize!(dest.bwd, size(src.bwd))
-    dest.bwd .= src.bwd
+    
+    # resize!(dest.bwd, size(src.bwd))
+    dest.bwd = copy(src.bwd)
     dest.n_particles = src.n_particles
     dest.n_vertices = src.n_vertices
     return dest
