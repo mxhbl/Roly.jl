@@ -1,6 +1,8 @@
 using StaticArrays
 using Graphs
 using LinearAlgebra
+using SparseArrays
+using NautyGraphs
 
 Point{D,F} = SVector{D,F}
 abstract type RotationOperator{F<:Real} end
@@ -137,34 +139,38 @@ struct PolyhedronGeometry{F<:AbstractFloat} <: AbstractGeometry{F}
 
     function PolyhedronGeometry(shape::Symbol, a::F) where {F<:AbstractFloat}
         if shape == :cube
-            xs = a * [Point{3,F}(0, 0, -1),
+            xs = a * [Point{3,F}(1, 0, 0),
+                      Point{3,F}(0, 0, -1),
+                      Point{3,F}(0, 1, 0),
                       Point{3,F}(0, 0, 1),
-                      Point{3,F}(-1, 0, 0),
-                      Point{3,F}(1, 0, 0),
                       Point{3,F}(0, -1, 0),
-                      Point{3,F}(0, 1, 0)]
+                      Point{3,F}(-1, 0, 0)]
 
             corners = vec([a * SVector(i, j, k) for i in F[-1, 1], j in F[-1, 1], k in F[-1, 1]])
             θs_ref = [Quaternion{F}(1, 0, 0, 0),
-                      Quaternion{F}(0, 0, 1, 0),
-                      inv(√2) * Quaternion{F}(1, 0, 1, 0),
                       inv(√2) * Quaternion{F}(1, 0, -1, 0),
-                      inv(√2) * Quaternion{F}(1, 1, 0, 0),
-                      inv(√2) * Quaternion{F}(1, -1, 0, 0)]
-            Δθs = [Quaternion{F}(0, 0, 1, 0),
-                   Quaternion{F}(1, 0, 0, 0),
-                   inv(√2) * Quaternion{F}(1, 0, -1, 0),
-                   inv(√2) * Quaternion{F}(1, 0, 1, 0),
-                   inv(√2) * Quaternion{F}(1, -1, 0, 0),
-                   inv(√2) * Quaternion{F}(1, 1, 0, 0)]
+                      inv(√2) * Quaternion{F}(1, 0, 0, -1),
+                      inv(√2) * Quaternion{F}(1, 0, 1, 0),
+                      inv(√2) * Quaternion{F}(1, 0, 0, 1),
+                      Quaternion{F}(0, 0, 0, 1)]
+            Δθs = [Quaternion{F}(0, 0, 0, 1),
+                   Quaternion{F}(0, 0, 0, 1) * (inv(√2) * Quaternion{F}(1, 0, -1, 0)),
+                   inv(√2) * Quaternion{F}(1, 0, 0, -1),
+                   Quaternion{F}(0, 0, 0, 1) * (inv(√2) * Quaternion{F}(1, 0, 1, 0)),
+                   inv(√2) * Quaternion{F}(1, 0, 0, 1),
+                   Quaternion{F}(1, 0, 0, 0)]
 
-            adjmx = [0 0 1 1 0 0;
-                     0 0 1 1 0 0;
-                     0 0 0 0 1 1;
-                     0 0 0 0 1 1;
-                     1 1 0 0 0 0;
-                     1 1 0 0 0 0]
-            anatomy = DirectedDenseNautyGraph(adjmx)
+            g0 = sparse([0 1 0 0;
+                         0 0 1 0;
+                         0 0 0 1;
+                         1 0 0 0])
+            G = blockdiag(g0, g0, g0, g0, g0, g0)
+            edges = [1, 7], [2, 20], [3, 13], [4, 10], [5, 21], [6, 17], [8, 9], [11, 16], [12, 22], [14, 19], [15, 23], [18, 24]
+            for e in edges
+                i, j = e
+                G[i, j] = G[j, i] = 1
+            end
+            anatomy = DirectedDenseNautyGraph(G)
 
             R_min = minimum(norm.(xs))
             R_max = maximum(norm.(corners))

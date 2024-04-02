@@ -241,6 +241,8 @@ function polygenerate(callback::Function, assembly_system::AssemblySystem{D,T,F,
                 continue
             end
 
+            println("accpet")
+
             next = copy(u)
             species_j, aj =  irg_unflatten(j, assembly_system._sides_sum)
             hashval = hash(next)

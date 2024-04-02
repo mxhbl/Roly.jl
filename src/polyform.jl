@@ -115,8 +115,8 @@ function create_monomer(geometry::AbstractGeometry{F},
     end
 
     return Polyform(DirectedDenseNautyGraph(geometry.anatomy, face_labels),
-                    PolyEncoder([[[i] for i in 1:length(geometry)]]),
-                    zeros(T, length(geometry)),
+                    PolyEncoder([[collect(i:i+3) for i in 1:4:4*length(geometry)]]),
+                    zeros(T, 4*length(geometry)),
                     [species_idx],
                     xs, ψs)
 end
