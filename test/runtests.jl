@@ -5,4 +5,5 @@ using Roly
     include("geometry.jl")
     include("structure.jl")
     include("enumeration.jl")
+    include("utils.jl")
 end;

@@ -1,5 +1,6 @@
 using NautyGraphs
 using StaticArrays
+using ElasticArrays
 
 HashType = UInt
 DefInt, DefFloat = Int16, Float32
@@ -33,77 +34,106 @@ function irg_unflatten(i::Integer, intervals::AbstractVector{<:Integer})
     end
 end
 
+mutable struct PolyEncoder{T}
+    fwd::Vector{Vector{Vector{T}}}
+    bwd::ElasticMatrix{T}
+    n_particles::T
+    n_vertices::T
 
-mutable struct EncTranslator{T}
-    fwd::Vector{Vector{T}}
-    bwd::Matrix{T}
-    n::T
-    m::T
+    function PolyEncoder(fwd::AbstractVector{<:AbstractVector{<:AbstractVector{T}}}, bwd::AbstractMatrix{T}) where {T}
+        return new{T}(fwd, bwd, length(fwd), size(bwd, 2))
+    end
+end
+PolyEncoder{T}() where {T} = PolyEncoder(Vector{Vector{T}}[], zeros(T, (3, 0)))
+function PolyEncoder(fwd::AbstractVector{<:AbstractVector{<:AbstractVector{T}}}) where {T}
+    n_vertices = sum(length(s) for f in fwd for s in f; init=0)
 
-    function EncTranslator(fwd::AbstractVector{<:AbstractVector{T}}) where {T}
-        n = length(fwd)
-        m = sum(length(f) for f in fwd; init=0)
-
-        bwd = zeros(2, m)
-        for i in 1:m
-            for (j, f) in enumerate(fwd)
-                if i ∈ f
-                    bwd[:, i] .= [T(j), T(findfirst(x->x==i, f))]
+    bwd = zeros(T, 3, n_vertices)
+    for i in 1:n_vertices
+        for (j, f) in enumerate(fwd)
+            for (k, s) in enumerate(f)
+                if i ∈ s
+                    bwd[:, i] .= [j, k, findfirst(x->x==i, s)]
                     break
                 end
             end
         end
+    end
 
-        return new{T}(fwd, bwd, n, m)
-    end
-    function EncTranslator(fwd::AbstractVector{<:AbstractVector{T}}, bwd::AbstractMatrix{T}) where {T}
-        return new{T}(fwd, bwd, length(fwd), size(bwd, 2))
-    end
+    return PolyEncoder(fwd, bwd)
 end
-EncTranslator{T}() where {T} = EncTranslator(Vector{T}[], zeros(T, (0, 0)))
 
-function Base.permute!(t::EncTranslator, p::AbstractVector{<:Integer})
-    @assert length(p) == t.m
+function Base.permute!(enc::PolyEncoder, p::AbstractVector{<:Integer})
+    @assert length(p) == enc.n_vertices
 
-    t.bwd .= @view t.bwd[:, p]
+    enc.bwd .= @view enc.bwd[:, p]
 
     inv_p = invperm(p)
-    t.fwd .= [inv_p[f] for f in t.fwd]
-    return
-end
-
-
-function Base.vcat(t::EncTranslator{T}, h::EncTranslator) where {T}
-    fwd = vcat(t.fwd, [hf .+ t.m for hf in h.fwd]) #TODO: reduce allocation
-    bwd = hcat(t.bwd, h.bwd .+ t.n*[T(1), T(0)])
-    return EncTranslator(fwd, bwd)
-end
-function Base.deleteat!(t::EncTranslator, i::Integer)
-    del_ai = t.fwd[i]
-
-    ai_shifter(ai) = ai - sum(x->x < ai, del_ai) #TODO:check gt or gte
-    k_shifter(k) = k - (k > i)
-
-    deleteat!(t.fwd, i)
-    for j in eachindex(t.fwd)
-        t.fwd[j] .= ai_shifter.(t.fwd[j])
+    for part in enc.fwd
+        for i in eachindex(part)
+            for j in eachindex(part[i])
+                part[i][j] = inv_p[part[i][j]]
+            end
+        end
     end
-    t.bwd = t.bwd[:, setdiff(1:end, del_ai)]
-    t.bwd[1, :] .= k_shifter.(t.bwd[1, :])
-
-    t.n -= 1
-    t.m -= length(del_ai)
     return
 end
-Base.copy(t::EncTranslator) = EncTranslator([copy(f) for f in t.fwd], copy(t.bwd))
-function Base.copy!(dest::EncTranslator{T}, src::EncTranslator{T}) where {T}
-    # TODO: make this non-allocating
-    # copy!(dest.fwd, src.fwd)
-    resize!(dest.fwd, src.n)
-    dest.fwd .= copy.(src.fwd)
-    dest.bwd = copy(src.bwd)
-    dest.n = src.n
-    dest.m = src.m
+
+# TODO: the following two methods should be implemented with better memory management,
+# With as few allocations as possible
+function concatenate(enc::PolyEncoder{T}, h::PolyEncoder) where {T}
+    ne = enc.n_particles
+    me = enc.n_vertices
+    nh = h.n_particles
+
+    fwd = similar(enc.fwd, ne+nh)
+    for i in eachindex(enc.fwd)
+        fwd[i] = [copy(s) for s in enc.fwd[i]]
+    end
+    for i in eachindex(h.fwd)
+        fwd[i+ne] = [copy(s) .+ me for s in h.fwd[i]]
+    end
+
+    bwd = hcat(enc.bwd, h.bwd .+ ne * [one(T), zero(T), zero(T)])
+    return PolyEncoder(fwd, bwd)
+end
+function Base.deleteat!(enc::PolyEncoder, i::Integer)
+    #Flatten all to-be-deleted indices into one vector
+    del_vs = [v for verts in enc.fwd[i] for v in verts]
+
+    vertex_shift(v) = sum(x -> x < v, del_vs)
+    particle_shift(k) = (k > i)
+
+    deleteat!(enc.fwd, i)
+    for part in enc.fwd
+        for j in eachindex(part)
+            @views part[j] .-= vertex_shift.(part[j])
+        end
+    end
+    enc.bwd = enc.bwd[:, setdiff(1:end, del_vs)] #TODO: optimize this
+    @views enc.bwd[1, :] .-= particle_shift.(enc.bwd[1, :])
+
+    enc.n_particles -= 1
+    enc.n_vertices -= length(del_vs)
+    return
+end
+# Base.copy(enc::PolyEncoder) = PolyEncoder(deepcopy(enc.fwd), copy(enc.bwd)) # TODO: watch the deepcopy
+function Base.copy!(dest::PolyEncoder{T}, src::PolyEncoder{T}) where {T}
+    resize!(dest.fwd, src.n_particles)
+    for i in eachindex(dest.fwd)
+        if isassigned(dest.fwd, i)
+            for j in eachindex(dest.fwd[i])
+                dest.fwd[i][j] .= src.fwd[i][j]
+            end
+        else
+            dest.fwd[i] = copy.(src.fwd[i])
+        end
+    end
+    # dest.fwd .= [copy.(part) for part in src.fwd]
+    resize!(dest.bwd, size(src.bwd))
+    dest.bwd .= src.bwd
+    dest.n_particles = src.n_particles
+    dest.n_vertices = src.n_vertices
     return dest
 end
 

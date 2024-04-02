@@ -5,16 +5,17 @@ using NautyGraphs
 
 mutable struct Polyform{D,T<:Integer,F<:AbstractFloat,R<:RotationOperator{F}}
     anatomy::DirectedDenseNautyGraph{Cint}
-    translator::EncTranslator{Int}
+    encoder::PolyEncoder{Int}
+    bond_partners::Vector{T}
     species::Vector{T}
     xs::Vector{Point{D,F}}
     ψs::Vector{R}
     σ::T
-    function Polyform{D,T,F}(anatomy, translator, species, xs, ψs, σ) where {D,T,F}
+    function Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs, σ) where {D,T,F}
         if D == 2
-            return new{D,T,F,Angle{F}}(anatomy, translator, species, xs, ψs, σ)
+            return new{D,T,F,Angle{F}}(anatomy, encoder, bond_status, species, xs, ψs, σ)
         elseif D == 3
-            return new{D,T,F,Quaternion{F}}(anatomy, translator, species, xs, ψs, σ)
+            return new{D,T,F,Quaternion{F}}(anatomy, encoder, bond_status, species, xs, ψs, σ)
         else
             error("Polyforms are only defined in dimension 2 and 3.")
         end
@@ -40,15 +41,15 @@ function Base.show(io::Core.IO, p::Polyform{D,T,F}) where {D,T,F}
     end
 end
 Base.show(io::Core.IO, ::Type{Polyform{D,T,F}}) where {D,T,F} = print(io, "Polyform{$D,$T,$F}")
-function Polyform{D,T,F}(anatomy, translator, species, xs, ψs) where {D,T,F}
-    p = Polyform{D,T,F}(anatomy, translator, species, xs, ψs, 0)
+function Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs) where {D,T,F}
+    p = Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs, 0)
     canonize!(p)
     return p
 end 
-Polyform(anatomy, translator, species::AbstractVector{T}, xs::AbstractVector{<:Point{D,F}}, ψs, σ) where {D,T,F} = 
-Polyform{D,T,F}(anatomy, translator, species, xs, ψs, σ)
-Polyform(anatomy, translator, species::AbstractVector{T}, xs::AbstractVector{<:Point{D,F}}, ψs) where {D,T,F} = 
-Polyform{D,T,F}(anatomy, translator, species, xs, ψs)
+Polyform(anatomy, encoder, bond_status, species::AbstractVector{T}, xs::AbstractVector{<:Point{D,F}}, ψs, σ) where {D,T,F} = 
+Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs, σ)
+Polyform(anatomy, encoder, bond_status, species::AbstractVector{T}, xs::AbstractVector{<:Point{D,F}}, ψs) where {D,T,F} = 
+Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs)
 
 function Polyform{D,T,F}() where {D,T,F}
     if D == 2
@@ -56,12 +57,21 @@ function Polyform{D,T,F}() where {D,T,F}
     else
         ψs = Quaternion{F}[]
     end
-    return Polyform{D,T,F}(DirectedDenseNautyGraph(0), EncTranslator{Int}(), zeros(T, 0), SVector{2,F}[], ψs, 0)
+    return Polyform{D,T,F}(DirectedDenseNautyGraph(0), PolyEncoder{Int}(), zeros(T, 0), zeros(T, 0), SVector{2,F}[], ψs, 0)
 end
 
 function canonize!(p::Polyform)
     canon_perm, n = NautyGraphs.canonize!(p.anatomy)
-    permute!(p.translator, canon_perm)
+    permute!(p.encoder, canon_perm)
+    p.bond_partners .= p.bond_partners[canon_perm]
+
+    inv_perm = invperm(canon_perm)
+    for (i, v) in enumerate(p.bond_partners)
+        if v == 0
+            continue
+        end
+        p.bond_partners[i] = inv_perm[v]
+    end
     p.σ = n
     return
 end
@@ -77,11 +87,12 @@ function Base.:(==)(si::Polyform, sj::Polyform)
 end
 
 function Base.copy(p::Polyform)
-    return Polyform(copy(p.anatomy), copy(p.translator), copy(p.species), copy(p.xs), copy(p.ψs), p.σ)
+    return Polyform(copy(p.anatomy), copy(p.encoder), copy(p.species), copy(p.xs), copy(p.ψs), p.σ)
 end
 function Base.copy!(dest::Polyform{D,T,F}, src::Polyform{D,T,F}) where {D,T,F}
     copy!(dest.anatomy, src.anatomy)
-    copy!(dest.translator, src.translator)
+    copy!(dest.encoder, src.encoder)
+    copy!(dest.bond_partners, src.bond_partners)
     copy!(dest.species, src.species)
     copy!(dest.xs, src.xs)
     copy!(dest.ψs, src.ψs)
@@ -104,7 +115,8 @@ function create_monomer(geometry::AbstractGeometry{F},
     end
 
     return Polyform(DirectedDenseNautyGraph(geometry.anatomy, face_labels),
-                    EncTranslator([collect(1:length(geometry))]),
+                    PolyEncoder([[[i] for i in 1:length(geometry)]]),
+                    zeros(T, length(geometry)),
                     [species_idx],
                     xs, ψs)
 end
