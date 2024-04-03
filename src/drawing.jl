@@ -31,7 +31,7 @@ function draw_ngon(n, a; c="grey90", shades=nothing)
             @layer begin
                 Luxor.rotate(θ)
                 ngon_outer = ngonside(O, a_out, n, orientation; vertices=true)
-                clip_points = 1.2 * [ngon_outer[2], Point(0, 0), ngon_outer[1]]
+                clip_points = 1.2 * [ngon_outer[2], Luxor.Point(0, 0), ngon_outer[1]]
                 clip_poly = poly(clip_points, :clip)
 
                 sethue(c)
@@ -63,30 +63,29 @@ function draw_ngon(n, a; c="grey90", shades=nothing)
     end
 end
 
-function draw_polyform(structure, assembly_system; r=200, species_colors=nothing)
-    spes = species(structure)
+function draw_polyform(pform, assembly_system; r=200, species_colors=nothing)
+    spes = species(pform)
 
     if isnothing(species_colors)
         species_colors = Dict(i => "grey90" for i in values(spes))
     end
 
     d = r
-    positions = Coordinates2D((x -> d * SA[1, -1] .* x).(structure.positions.xs),
-                              structure.positions.ψs)
+    xs = [d * SVector(1, -1) .* x for x in pform.xs]
+    ψs = [ψ.θ for ψ in pform.ψs]
 
     polygons = [length(assembly_system.geometries[k])
-                for k in species(structure)]
+                for k in species(pform)]
 
     # Make sure the center of mass is centered
-    com_position = mean(positions.xs)
-    shift!(positions, -com_position)
+    x_com = mean(xs)
+    xs .-= Ref(x_com)
 
     # Draw all the triangles at the correct positions
-    for (particle, position) in enumerate(positions)
-        x, θ = position
+    for (particle, (x, ψ)) in enumerate(zip(xs, ψs))
         @layer begin
             Luxor.translate(x...)
-            Luxor.rotate(-θ * π)
+            Luxor.rotate(-ψ * π)
             draw_ngon(polygons[particle], r; c=species_colors[spes[particle]])
         end
     end
@@ -122,7 +121,7 @@ function draw_polyforms(structures, assembly_system; r=50, box_size=5, ncols=4, 
                 Luxor.translate(pos)
                 draw_polyform(structure; r=r, species_colors=species_colors)
                 fontsize(r / 2)
-                Luxor.text(string(name), Point(-2 * r / 2, -3 * r / 2))
+                Luxor.text(string(name), Luxor.Point(-2 * r / 2, -3 * r / 2))
             end
             i += 1
         end
