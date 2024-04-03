@@ -26,14 +26,21 @@
          4 2 1 1],
         UnitTriangleGeometry)
 
-    nstrs_16 = polyenum(I16, max_size=Inf)[1]
-    nstrs_137 = polyenum(I137, max_size=Inf)[1]
-    nstrs_cyc = polyenum(Icyc, max_size=Inf)[1]
+    nstrs_16_enum = polyenum(I16, max_size=Inf)[1]
+    nstrs_137_enum = polyenum(I137, max_size=Inf)[1]
+    nstrs_cyc_enum = polyenum(Icyc, max_size=Inf)[1]
 
-    @test nstrs_16 == 16
-    @test nstrs_137 == 137
-    @test nstrs_cyc == 283
+    @test nstrs_16_enum == 16
+    @test nstrs_137_enum == 137
+    @test nstrs_cyc_enum == 283
 
+    nstrs_16_gen = polygenerate(I16, max_size=Inf) |> length
+    nstrs_137_gen = polygenerate(I137, max_size=Inf) |> length
+    nstrs_cyc_gen = polygenerate(Icyc, max_size=Inf) |> length
+
+    @test nstrs_16_gen == 16
+    @test nstrs_137_gen == 137
+    @test nstrs_cyc_gen == 283
 
     I_polymino = AssemblySystem(
         [1 1 1 1;
@@ -58,20 +65,31 @@
     n_polyiamonds = [1, 1, 1, 4, 6, 19, 43, 120, 307, 866]
     n_polyiamonds_cumulative = cumsum(n_polyiamonds)
 
-    nstrs_polymino = [polyenum(I_polymino, max_size=i)[1] for i in 1:length(n_polyminoes_cumulative)]
-    nstrs_polyiamond = [polyenum(I_polyiamond, max_size=i)[1] for i in 1:length(n_polyiamonds_cumulative)]
+    I_polycube = AssemblySystem(
+        [1 1 1 1; 
+         1 2 1 2;
+         1 3 1 3;
+         1 4 1 4;
+         1 5 1 5;
+         1 6 1 6], UnitCubeGeometry, ones(Int, 24))
 
-    @test nstrs_polymino == n_polyminoes_cumulative
-    @test nstrs_polyiamond == n_polyiamonds_cumulative
+    # Number of one-sided polycubes (https://oeis.org/A006534)
+    n_polycubes = [1, 1, 2, 8, 29, 166, 1023]
+    n_polycubes_cumulative = cumsum(n_polycubes)
 
-    # if length(workers()) > 1
-    #     rmprocs(workers())
-    # end
-    # @add_enumworkers 3
+    nstrs_polymino_enum = [polyenum(I_polymino, max_size=i)[1] for i in 1:length(n_polyminoes_cumulative)]
+    nstrs_polyiamond_enum = [polyenum(I_polyiamond, max_size=i)[1] for i in 1:length(n_polyiamonds_cumulative)]
+    nstrs_polycube_enum = [polyenum(I_polycube, max_size=i)[1] for i in 1:length(n_polycubes_cumulative)]
 
-    # @test nstrs_16 == polyenum_distributed(I16, max_size=Inf, verbose=false)[1]
-    # @test nstrs_137 == polyenum_distributed(I137, max_size=Inf, verbose=false)[1]
-    # @test nstrs_cyc == polyenum_distributed(Icyc, max_size=Inf, verbose=false)[1]
-    # @test nstrs_polymino == [polyenum_distributed(I_polymino, max_size=i, verbose=false)[1] for i in 1:length(n_polyminoes_cumulative)]
-    # @test nstrs_polyiamond == [polyenum_distributed(I_polyiamond, max_size=i, verbose=false)[1] for i in 1:length(n_polyiamonds_cumulative)]
+    @test nstrs_polymino_enum == n_polyminoes_cumulative
+    @test nstrs_polyiamond_enum == n_polyiamonds_cumulative
+    @test nstrs_polycube_enum == n_polycubes_cumulative
+
+    nstrs_polymino_gen = [length(polygenerate(I_polymino, max_size=i)) for i in 1:length(n_polyminoes_cumulative)]
+    nstrs_polyiamond_gen = [length(polygenerate(I_polyiamond, max_size=i)) for i in 1:length(n_polyiamonds_cumulative)]
+    nstrs_polycube_gen = [length(polygenerate(I_polycube, max_size=i)) for i in 1:length(n_polycubes_cumulative)]
+
+    @test nstrs_polymino_gen == n_polyminoes_cumulative
+    @test nstrs_polyiamond_gen == n_polyiamonds_cumulative
+    @test nstrs_polycube_gen == n_polycubes_cumulative
 end;

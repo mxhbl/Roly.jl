@@ -23,4 +23,11 @@
     @test only(Roly.face_pairs(Roly.Point(0.5, inv(√3)/2), Roly.Angle(0.), Roly.Angle(1.), geom, geom)) == (3, 3)
     @test only(Roly.face_pairs(Roly.Point(0.5, inv(√3)/2), Roly.Angle(0.), Roly.Angle(1. + 2/3), geom, geom)) == (3, 1)
     @test only(Roly.face_pairs(Roly.Point(0.5, inv(√3)/2), Roly.Angle(0.), Roly.Angle(1. - 2/3), geom, geom)) == (3, 2)
+
+    geoms = (Roly.UnitTriangleGeometry, Roly.UnitCubeGeometry, Roly.UnitPentagonGeometry, 
+            Roly.UnitHexagonGeometry, Roly.UnitCubeGeometry)
+
+    for g in geoms
+        @test all(Roly.rotate.(g.xs, g.θs_ref) .≈ Ref(g.xs[1]))
+    end
 end

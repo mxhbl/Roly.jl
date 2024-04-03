@@ -5,7 +5,7 @@ using NautyGraphs
 
 mutable struct Polyform{D,T<:Integer,F<:AbstractFloat,R<:RotationOperator{F}}
     anatomy::DirectedDenseNautyGraph{Cint}
-    encoder::PolyEncoder{Int}
+    encoder::PolyEncoder{T}
     bond_partners::Vector{T}
     species::Vector{T}
     xs::Vector{Point{D,F}}
@@ -20,6 +20,23 @@ mutable struct Polyform{D,T<:Integer,F<:AbstractFloat,R<:RotationOperator{F}}
             error("Polyforms are only defined in dimension 2 and 3.")
         end
     end
+end
+function Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs) where {D,T,F}
+    p = Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs, 0)
+    canonize!(p)
+    return p
+end 
+Polyform(anatomy, encoder, bond_status, species::AbstractVector{T}, xs::AbstractVector{<:Point{D,F}}, ψs, σ) where {D,T,F} = 
+Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs, σ)
+Polyform(anatomy, encoder, bond_status, species::AbstractVector{T}, xs::AbstractVector{<:Point{D,F}}, ψs) where {D,T,F} = 
+Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs)
+function Polyform{D,T,F}() where {D,T,F}
+    if D == 2
+        ψs = Angle{F}[]
+    else
+        ψs = Quaternion{F}[]
+    end
+    return Polyform{D,T,F}(DirectedDenseNautyGraph(0), PolyEncoder{T}(), zeros(T, 0), zeros(T, 0), SVector{2,F}[], ψs, 0)
 end
 anatomy(p::Polyform) = p.anatomy
 faces(::Type{T}, p::Polyform) where {T} = convert(Vector{T}, p.anatomy.labels)
@@ -41,24 +58,6 @@ function Base.show(io::Core.IO, p::Polyform{D,T,F}) where {D,T,F}
     end
 end
 Base.show(io::Core.IO, ::Type{Polyform{D,T,F}}) where {D,T,F} = print(io, "Polyform{$D,$T,$F}")
-function Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs) where {D,T,F}
-    p = Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs, 0)
-    canonize!(p)
-    return p
-end 
-Polyform(anatomy, encoder, bond_status, species::AbstractVector{T}, xs::AbstractVector{<:Point{D,F}}, ψs, σ) where {D,T,F} = 
-Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs, σ)
-Polyform(anatomy, encoder, bond_status, species::AbstractVector{T}, xs::AbstractVector{<:Point{D,F}}, ψs) where {D,T,F} = 
-Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs)
-
-function Polyform{D,T,F}() where {D,T,F}
-    if D == 2
-        ψs = Angle{F}[]
-    else
-        ψs = Quaternion{F}[]
-    end
-    return Polyform{D,T,F}(DirectedDenseNautyGraph(0), PolyEncoder{Int}(), zeros(T, 0), zeros(T, 0), SVector{2,F}[], ψs, 0)
-end
 
 function canonize!(p::Polyform)
     canon_perm, n = NautyGraphs.canonize!(p.anatomy)
@@ -100,9 +99,9 @@ function Base.copy!(dest::Polyform{D,T,F}, src::Polyform{D,T,F}) where {D,T,F}
     return dest
 end
 
-function create_monomer(geometry::AbstractGeometry{F},
-                        species_idx::T,
-                        face_labels::AbstractVector{<:Integer}) where {T<:Integer,F<:Real}
+function create_monomer(geometry::AbstractGeometry{T,F},
+                        species_idx::Integer,
+                        face_labels::AbstractVector{<:Integer}) where {T,F}
 
     if geometry_dimension(geometry) == 2
         xs = [Point{2,F}(0., 0.)]
@@ -114,9 +113,9 @@ function create_monomer(geometry::AbstractGeometry{F},
         error("Polyforms are only implemented for dimension 2 and 3.")
     end
 
-    return Polyform(DirectedDenseNautyGraph(geometry.anatomy, face_labels),
-                    PolyEncoder([[collect(i:i+3) for i in 1:4:4*length(geometry)]]),
-                    zeros(T, 4*length(geometry)),
-                    [species_idx],
+    return Polyform(DirectedDenseNautyGraph(geometry.anatomy, convert(Vector{T}, face_labels)),
+                    copy(geometry.encoder),
+                    zeros(T, geometry.encoder.n_vertices),
+                    [T(species_idx)],
                     xs, ψs)
 end

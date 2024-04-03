@@ -217,7 +217,7 @@ function polygenerate(callback::Function, assembly_system::AssemblySystem{D,T,F,
 
         enqueue!(queue, monomer)
         push!(hashes, hashval)
-        open_bonds[hashval] = all_open_bonds(monomer, interaction_matrix(assembly_system))
+        open_bonds[hashval] = all_open_bonds(monomer, assembly_system)
     end
 
     u = Polyform{D,T,F}()
@@ -240,8 +240,6 @@ function polygenerate(callback::Function, assembly_system::AssemblySystem{D,T,F,
             if !success || (hash(u) ∈ hashes)
                 continue
             end
-
-            println("accpet")
 
             next = copy(u)
             species_j, aj =  irg_unflatten(j, assembly_system._sides_sum)

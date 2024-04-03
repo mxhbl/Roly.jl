@@ -90,19 +90,20 @@ function grab_at!(xs::AbstractVector{<:Point}, ψs::AbstractVector{<:RotationOpe
     return
 end
 
-abstract type AbstractGeometry{F<:AbstractFloat} end
+abstract type AbstractGeometry{T<:Integer,F<:AbstractFloat} end
 Base.length(geom::AbstractGeometry) = length(geom.xs)
 
-struct PolygonGeometry{F<:AbstractFloat} <: AbstractGeometry{F}
+struct PolygonGeometry{T<:Integer,F<:AbstractFloat} <: AbstractGeometry{T,F}
     xs::Vector{Point{2,F}}                # Displacement vectors from the center to the binding sites
     θs_ref::Vector{Angle{F}}              # Rotation necessary to rotate side i into reference position
     Δθs::Vector{Angle{F}}                 # Rotation to be applied to the added particle (assumed to be in reference orientation) once attached to side i 
     corners::Vector{Point{2,F}}
     anatomy::DirectedDenseNautyGraph{Cint}  # Oriented graph of the dual polyhedron associated with the bb symmetry group
+    encoder::PolyEncoder{T}
     R_min::F
     R_max::F
 
-    function PolygonGeometry(n::Integer, a::F) where {F}
+    function PolygonGeometry(n::T, a::F) where {T,F}
         r_in = convert(F, 0.5a * cot(π / n))
         r_out = convert(F, 0.5a * csc(π / n))
 
@@ -114,30 +115,32 @@ struct PolygonGeometry{F<:AbstractFloat} <: AbstractGeometry{F}
 
         xs = [SVector{2,F}(pol2cart(r, -θ.θ - 1/2)) for (r, θ) in zip(rs, θs_ref)]
         anatomy = DirectedDenseNautyGraph(cycle_digraph(n))
+        encoder = PolyEncoder([[[T(i)] for i in 1:length(xs)]])
 
         R_min = minimum(norm.(xs))
         R_max = maximum(norm.(corners))
 
-        return new{F}(xs, θs_ref, Δθs, corners, anatomy, R_min, R_max)
+        return new{T,F}(xs, θs_ref, Δθs, corners, anatomy, encoder, R_min, R_max)
     end
 end
 
-const UnitTriangleGeometry = PolygonGeometry(3, DefFloat(1.0))
-const UnitSquareGeometry = PolygonGeometry(4, DefFloat(1.0))
-const UnitPentagonGeometry = PolygonGeometry(5, DefFloat(1.0))
-const UnitHexagonGeometry = PolygonGeometry(6, DefFloat(1.0))
+const UnitTriangleGeometry = PolygonGeometry(DefInt(3), DefFloat(1.0))
+const UnitSquareGeometry = PolygonGeometry(DefInt(4), DefFloat(1.0))
+const UnitPentagonGeometry = PolygonGeometry(DefInt(5), DefFloat(1.0))
+const UnitHexagonGeometry = PolygonGeometry(DefInt(6), DefFloat(1.0))
 
 
-struct PolyhedronGeometry{F<:AbstractFloat} <: AbstractGeometry{F}
+struct PolyhedronGeometry{T,F<:AbstractFloat} <: AbstractGeometry{T,F}
     xs::Vector{Point{3,F}}                # Displacement vectors from the center to the binding sites
     θs_ref::Vector{Quaternion{F}}         # Rotation necessary to rotate side i into reference position   
     Δθs::Vector{Quaternion{F}}            # Rotation to be applied to the added particle (assumed to be in reference orientation) once attached to side i 
     corners::Vector{Point{3,F}}
     anatomy::DirectedDenseNautyGraph{Cint}  # Oriented graph of the dual polyhedron associated with the bb symmetry group
+    encoder::PolyEncoder{T}
     R_min::F
     R_max::F
 
-    function PolyhedronGeometry(shape::Symbol, a::F) where {F<:AbstractFloat}
+    function PolyhedronGeometry{T}(shape::Symbol, a::F) where {T,F}
         if shape == :cube
             xs = a * [Point{3,F}(1, 0, 0),
                       Point{3,F}(0, 0, -1),
@@ -165,12 +168,14 @@ struct PolyhedronGeometry{F<:AbstractFloat} <: AbstractGeometry{F}
                          0 0 0 1;
                          1 0 0 0])
             G = blockdiag(g0, g0, g0, g0, g0, g0)
-            edges = [1, 7], [2, 20], [3, 13], [4, 10], [5, 21], [6, 17], [8, 9], [11, 16], [12, 22], [14, 19], [15, 23], [18, 24]
+            edges = [1, 7], [2, 20], [3, 13], [4, 10], [5, 21], [6, 17], 
+            [8, 9], [11, 16], [12, 22], [14, 19], [15, 23], [18, 24]
             for e in edges
                 i, j = e
                 G[i, j] = G[j, i] = 1
             end
             anatomy = DirectedDenseNautyGraph(G)
+            encoder = PolyEncoder([[collect(T, i:i+3) for i in 1:4:24]])
 
             R_min = minimum(norm.(xs))
             R_max = maximum(norm.(corners))
@@ -178,11 +183,11 @@ struct PolyhedronGeometry{F<:AbstractFloat} <: AbstractGeometry{F}
             error("Shape $shape not supported.")
         end
         
-        return new{F}(xs, θs_ref, Δθs, corners, anatomy, R_min, R_max)
+        return new{T,F}(xs, θs_ref, Δθs, corners, anatomy, encoder, R_min, R_max)
     end
 end
 
-const UnitCubeGeometry = PolyhedronGeometry(:cube, DefFloat(1.))
+const UnitCubeGeometry = PolyhedronGeometry{DefInt}(:cube, DefFloat(1.))
 #TODO Implement basic 3d shapes: Platonic solids and polygon extrusions
 
 geometry_dimension(::PolygonGeometry) = 2
@@ -201,7 +206,7 @@ function attachment_offset(face_i::Integer, face_j::Integer,
 end
 
 # TODO: this function is susceptible to roundoff errors, be very careful with thresh
-function face_pairs(Δx::Point{D,F}, ψi::RotationOperator{F}, ψj::RotationOperator{F}, geom_i::AbstractGeometry{F}, geom_j::AbstractGeometry, convex=false, thresh=1e-2) where {D,F}
+function face_pairs(Δx::Point{D,F}, ψi::RotationOperator{F}, ψj::RotationOperator{F}, geom_i::AbstractGeometry, geom_j::AbstractGeometry, convex=false, thresh=1e-2) where {D,F}
     pairs = Tuple{Int,Int}[]
 
     for (i, z_i) in enumerate(geom_i.xs), (j, z_j) in enumerate(geom_j.xs)

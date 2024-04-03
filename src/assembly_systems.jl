@@ -1,4 +1,4 @@
-struct AssemblySystem{D, T<:Integer, F<:AbstractFloat, G<:AbstractGeometry{F}}
+struct AssemblySystem{D, T<:Integer, F<:AbstractFloat, G<:AbstractGeometry{T,F}}
     intmat::BitMatrix
     buildingblocks::Vector{Polyform{D,T,F}}
     geometries::Vector{G}
@@ -13,7 +13,7 @@ geometries(sys::AssemblySystem) = sys.geometries
 Base.size(sys::AssemblySystem) = sys.n_species, sys.n_edges
 Base.show(io::Core.IO, A::AssemblySystem{D,T,F}) where {D,T,F} = print(io, "AssemblySytem{$D,$T,$F}[n=$(A.n_species), k=$(A.n_edges)]")
 
-function AssemblySystem(interactions::AbstractMatrix{T}, geometries::Vector{G}, face_labels=nothing) where {T,F,G<:AbstractGeometry{F}}
+function AssemblySystem(interactions::AbstractMatrix{<:Integer}, geometries::Vector{<:AbstractGeometry{T,F}}, face_labels=nothing) where {T,F}
     ds = [geometry_dimension(g) for g in geometries]
     D = first(ds)
     @assert all(ds .== D)
@@ -47,9 +47,9 @@ function AssemblySystem(interactions::AbstractMatrix{T}, geometries::Vector{G}, 
         interaction_matrix[i, j] = interaction_matrix[j, i] = true
     end
 
-    return AssemblySystem{D,T,F,G}(interaction_matrix, monomers, geometries, n_species, n_edges, sides_sum)
+    return AssemblySystem{D,T,F,eltype(geometries)}(interaction_matrix, monomers, geometries, n_species, n_edges, sides_sum)
 end
-function AssemblySystem(interactions::AbstractMatrix{<:Integer}, geometry::AbstractGeometry{F}, face_labels=nothing) where {T,F}
+function AssemblySystem(interactions::AbstractMatrix{<:Integer}, geometry::AbstractGeometry{T,F}, face_labels=nothing) where {T,F}
     n_species = maximum(interactions[:, [1, 3]])
     geometries = [geometry for _ in 1:n_species]
     return AssemblySystem(interactions, geometries, face_labels)

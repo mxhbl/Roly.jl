@@ -1,11 +1,13 @@
-function open_bond(p::Polyform, j::Integer, interaction_matrix::AbstractMatrix)
+function open_bond(p::Polyform, j::Integer, assembly_sytem::AssemblySystem)
     for v in 1:length(p.bond_partners)
         if p.bond_partners[v] > 0
             continue
         end
-
-        face = p.encoder.bwd[2, v]
-        for (k, fk) in enumerate(@view interaction_matrix[:, face])
+        #TODO :FIX THIS INTERFACE AND DECIDE WHAT LABEL SHOULD DO
+        spcs = species(p)[p.encoder.bwd[1, v]]
+        offset = spcs > 1 ? assembly_sytem._sides_sum[spcs-1] : 0
+        lbl = p.encoder.bwd[2, v] + offset
+        for (k, fk) in enumerate(@view assembly_sytem.intmat[:, lbl])
             if fk > 0
                 j -= 1
             end
@@ -18,14 +20,14 @@ function open_bond(p::Polyform, j::Integer, interaction_matrix::AbstractMatrix)
     return nothing
 end
 
-function all_open_bonds(p::Polyform, interaction_matrix::AbstractMatrix)
+function all_open_bonds(p::Polyform, assembly_sytem::AssemblySystem)
     bonds = Tuple{Int,Int}[]
     j = 1
-    b = open_bond(p, j, interaction_matrix)
+    b = open_bond(p, j, assembly_sytem)
     while !isnothing(b)
         push!(bonds, b)
         j += 1
-        b = open_bond(p, j, interaction_matrix)
+        b = open_bond(p, j, assembly_sytem)
     end
     return bonds
 end
@@ -67,16 +69,9 @@ function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, a
                 # println("blocked bond")
                 return false
             end
-
-            # compatible_symmetry = assembly_system.symmetry_table[lbl_i, lbl_j]
         
-            aedges = contract_faces(Cint, vs_i, vs_j .+ nf)
+            aedges = contract_faces(convert(Vector{Cint}, vs_i), vs_j .+ nf)
             append!(anatomy_edges, aedges)
-            # TODO: probably need to add all vs as bond_parters, even in non-sym case where not all graph vs are contracted
-
-            # anatomy_edge = Edge(Cint(first(vs_i)), Cint(first(vs_j)+nf))
-            # push!(anatomy_edges, anatomy_edge)
-            # push!(anatomy_edges, reverse(anatomy_edge))
         end
     end
 
@@ -107,14 +102,20 @@ function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, a
     return true
 end
 
-function contract_faces(T::Type, vs_i, vs_j)
+function contract_faces(vs_i::AbstractVector{T}, vs_j::AbstractVector{T}) where {T}
     #TODO: handle non-identical compatible and incompatible symmetry
     # symmetry_order = gcd(length(vs_i), length(vs_j))
-    return [Edge{T}(vi, vj) for (vi, vj) in zip(vs_i, vs_j[[1, 4, 3, 2]])]
+    if length(vs_i) == 1 && length(vs_j) == 1
+        return [Edge{T}(only(vs_i), only(vs_j))]
+    else
+        #TODO optimize
+        idxs_j = [1; length(vs_j):-1:2]
+    end
+    return [Edge{T}(vi, vj) for (vi, vj) in zip(vs_i, vs_j[idxs_j])]
 end
 
 function grow!(p::Polyform{D,T,F}, k::Integer, assembly_system::AssemblySystem) where {D,T,F}
-    bond = open_bond(p, k, interaction_matrix(assembly_system))
+    bond = open_bond(p, k, assembly_system)
     if isnothing(bond)
         return false, k
     end
@@ -156,7 +157,6 @@ function shrink!(p::Polyform)
     deleteat!(p.species, idx)
 
     # open up bonds that are now free
-    # TODO: this should only be relevant when we shrink a monomer, could be handled better
     partners = p.bond_partners[del_vs]
     for part in partners
         if part == 0
