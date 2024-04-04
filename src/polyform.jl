@@ -50,9 +50,10 @@ orientations(p::Polyform) = p.ψs
 function Base.size(p::Polyform)
     return length(p.xs)
 end
+nparticles(p::Polyform) = size(p)
 nvertices(p::Polyform) = nv(p.anatomy)
 function Base.show(io::Core.IO, p::Polyform{D,T,F}) where {D,T,F}
-    print(io, "Polyform{$D,$T,$F}[n=$(siez(p))]")
+    print(io, "Polyform{$D,$T,$F}[n=$(size(p))]")
 end
 Base.show(io::Core.IO, ::Type{Polyform{D,T,F}}) where {D,T,F} = print(io, "Polyform{$D,$T,$F}")
 
@@ -112,7 +113,7 @@ function create_monomer(geometry::AbstractGeometry{T,F},
 
     return Polyform(DirectedDenseNautyGraph(geometry.anatomy, convert(Vector{T}, face_labels)),
                     copy(geometry.encoder),
-                    zeros(T, geometry.encoder.n_vertices),
+                    zeros(T, nvertices(geometry.encoder)), # TODO: clean this up
                     [T(species_idx)],
                     xs, ψs)
 end

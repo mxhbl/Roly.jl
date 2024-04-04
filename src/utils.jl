@@ -4,43 +4,22 @@ using StaticArrays
 HashType = UInt
 DefInt, DefFloat = Int16, Float32
 
-function irg_flatten(a::Integer, b::Integer, intervals::AbstractVector{<:Integer})
-    if a == 1
-        return b
-    else
-        return intervals[a-1] + b
-    end
-end
-function irg_unflatten(i::Integer, intervals::AbstractVector{<:Integer})
-    if i <= intervals[1]
-        return (1, i)
-    else
-        a = searchsortedlast(intervals, i, lt=≤) + 1
-        b = i - intervals[a - 1]
-        return (a, b)
-    end
-end
-
-mutable struct PolyEncoder{T}
+struct PolyEncoder{T}
     fwd::Vector{Vector{Vector{T}}}
-    bwd::Matrix{T}
-    n_particles::T
-    n_vertices::T
-
-    function PolyEncoder(fwd::AbstractVector{<:AbstractVector{<:AbstractVector{T}}}, bwd::AbstractMatrix{T}) where {T}
-        return new{T}(fwd, bwd, length(fwd), size(bwd, 2))
-    end
+    bwd::Vector{SVector{3,T}}
 end
-PolyEncoder{T}() where {T} = PolyEncoder(Vector{Vector{T}}[], zeros(T, (3, 0)))
+nparticles(enc::PolyEncoder) = length(enc.fwd)
+nvertices(enc::PolyEncoder) = length(enc.bwd)
+PolyEncoder{T}() where {T} = PolyEncoder(Vector{Vector{T}}[], Vector{SVector{3,T}}())
 function PolyEncoder(fwd::AbstractVector{<:AbstractVector{<:AbstractVector{T}}}) where {T}
     n_vertices = sum(length(s) for f in fwd for s in f; init=0)
 
-    bwd = zeros(T, 3, n_vertices)
+    bwd = Vector{SVector{3,T}}(undef, n_vertices)
     for i in 1:n_vertices
         for (j, f) in enumerate(fwd)
             for (k, s) in enumerate(f)
                 if i ∈ s
-                    bwd[:, i] .= [j, k, findfirst(x->x==i, s)]
+                    bwd[i] = SVector{3,T}(j, k, findfirst(x->x==i, s))
                     break
                 end
             end
@@ -51,10 +30,9 @@ function PolyEncoder(fwd::AbstractVector{<:AbstractVector{<:AbstractVector{T}}})
 end
 
 function Base.permute!(enc::PolyEncoder, p::AbstractVector{<:Integer})
-    @assert length(p) == enc.n_vertices
+    @assert length(p) == nvertices(enc)
 
-    enc.bwd .= @view enc.bwd[:, p]
-
+    permute!(enc.bwd, p)
     inv_p = invperm(p)
     for part in enc.fwd
         for i in eachindex(part)
@@ -69,9 +47,9 @@ end
 # TODO: the following two methods should be implemented with better memory management,
 # With as few allocations as possible
 function concatenate(enc::PolyEncoder{T}, h::PolyEncoder) where {T}
-    ne = enc.n_particles
-    me = enc.n_vertices
-    nh = h.n_particles
+    ne = nparticles(enc)
+    me = nvertices(enc)
+    nh = nparticles(h)
 
     fwd = similar(enc.fwd, ne+nh)
     for i in eachindex(enc.fwd)
@@ -81,12 +59,13 @@ function concatenate(enc::PolyEncoder{T}, h::PolyEncoder) where {T}
         fwd[i+ne] = [copy(s) .+ me for s in h.fwd[i]]
     end
 
-    bwd = hcat(enc.bwd, h.bwd .+ ne * [one(T), zero(T), zero(T)])
+    bwd = vcat(enc.bwd, h.bwd .+ Ref(SVector(T(ne), zero(T), zero(T))))
     return PolyEncoder(fwd, bwd)
 end
 function Base.deleteat!(enc::PolyEncoder, i::Integer)
     #Flatten all to-be-deleted indices into one vector
     del_vs = [v for verts in enc.fwd[i] for v in verts]
+    sort!(del_vs)
 
     vertex_shift(v) = sum(x -> x < v, del_vs)
     particle_shift(k) = (k > i)
@@ -97,17 +76,17 @@ function Base.deleteat!(enc::PolyEncoder, i::Integer)
             @views part[j] .-= vertex_shift.(part[j])
         end
     end
-    enc.bwd = enc.bwd[:, setdiff(1:end, del_vs)] #TODO: optimize this
-    @views enc.bwd[1, :] .-= particle_shift.(enc.bwd[1, :])
-
-    enc.n_particles -= 1
-    enc.n_vertices -= length(del_vs)
+    deleteat!(enc.bwd, del_vs)
+    for i in eachindex(enc.bwd)
+        p, f, s = enc.bwd[i]
+        enc.bwd[i] = SVector(p - particle_shift(p), f, s)
+    end
     return
 end
 Base.copy(enc::PolyEncoder) = PolyEncoder([[copy(f) for f in part] for part in enc.fwd], copy(enc.bwd))
 # Base.copy(enc::PolyEncoder) = PolyEncoder(deepcopy(enc.fwd), copy(enc.bwd))
 function Base.copy!(dest::PolyEncoder{T}, src::PolyEncoder{T}) where {T}
-    resize!(dest.fwd, src.n_particles)
+    resize!(dest.fwd, nparticles(src))
     for i in eachindex(dest.fwd)
         if isassigned(dest.fwd, i)
             for j in eachindex(dest.fwd[i])
@@ -117,13 +96,7 @@ function Base.copy!(dest::PolyEncoder{T}, src::PolyEncoder{T}) where {T}
             dest.fwd[i] = copy.(src.fwd[i])
         end
     end
-    # dest.fwd .= [copy.(part) for part in src.fwd]
-
-    # resize!(dest.bwd, size(src.bwd))
-    #TODO improve this
-    dest.bwd = copy(src.bwd)
-    dest.n_particles = src.n_particles
-    dest.n_vertices = src.n_vertices
+    copy!(dest.bwd, src.bwd)
     return dest
 end
 
@@ -185,4 +158,22 @@ function vertices_connected(g::DirectedDenseNautyGraph, v0::Integer,
     end
 
     return false
+end
+
+
+function irg_flatten(a::Integer, b::Integer, intervals::AbstractVector{<:Integer})
+    if a == 1
+        return b
+    else
+        return intervals[a-1] + b
+    end
+end
+function irg_unflatten(i::Integer, intervals::AbstractVector{<:Integer})
+    if i <= intervals[1]
+        return (1, i)
+    else
+        a = searchsortedlast(intervals, i, lt=≤) + 1
+        b = i - intervals[a - 1]
+        return (a, b)
+    end
 end

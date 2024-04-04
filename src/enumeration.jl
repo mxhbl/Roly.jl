@@ -1,11 +1,5 @@
-using LinearAlgebra
-using StaticArrays
-using Graphs
 using Base.Iterators
 using DataStructures
-using Distributed
-using Serialization
-using Base.Threads
 
 function f!(k::Polyform{T,F}, s::Polyform{T,F}) where {T,F}
     copy!(k, s)

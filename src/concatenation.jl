@@ -4,9 +4,9 @@ function open_bond(p::Polyform, j::Integer, assembly_sytem::AssemblySystem)
             continue
         end
         #TODO :FIX THIS INTERFACE AND DECIDE WHAT LABEL SHOULD DO
-        spcs = species(p)[p.encoder.bwd[1, v]]
+        spcs = species(p)[p.encoder.bwd[v][1]]
         offset = spcs > 1 ? assembly_sytem._sites_sum[spcs-1] : 0
-        lbl = p.encoder.bwd[2, v] + offset
+        lbl = p.encoder.bwd[v][2] + offset
         for (k, fk) in enumerate(@view assembly_sytem.intmat[:, lbl])
             if fk > 0
                 j -= 1
@@ -38,7 +38,7 @@ function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, a
     geoms = geometries(assembly_system)
 
     v, bblock_side_label = bond
-    i, face_i, _ = @view p.encoder.bwd[:, v]
+    i, face_i, _ = p.encoder.bwd[v]
     spcs_j, face_j = irg_unflatten(bblock_side_label, assembly_system._sites_sum)
     bblock = buildingblocks(assembly_system)[spcs_j]
 
@@ -83,7 +83,7 @@ function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, a
 
     push!(p.species, spcs_j)
     p.encoder = concatenate(p.encoder, bblock.encoder)
-    append!(p.bond_partners, zeros(T, bblock.encoder.n_vertices)) #TODO: make n_faces a higher level interface
+    append!(p.bond_partners, zeros(T, nvertices(bblock.encoder))) #TODO: make n_faces a higher level interface
     for ae in anatomy_edges
         add_edge!(p.anatomy, ae)
         add_edge!(p.anatomy, reverse(ae))
@@ -141,7 +141,7 @@ function shrink!(p::Polyform)
     k = 0
     if n > 1
         while true
-            idx = p.encoder.bwd[1, end-k]
+            idx = p.encoder.bwd[end-k][1]
             idxs = [i for part in p.encoder.fwd[idx] for i in part]
             if !are_bridge(p.anatomy, idxs)
                 break
@@ -150,7 +150,7 @@ function shrink!(p::Polyform)
         end
     end
 
-    idx = p.encoder.bwd[1, end-k]
+    idx = p.encoder.bwd[end-k][1]
     del_vs = sort([i for part in p.encoder.fwd[idx] for i in part])
 
     deleteat!(p.xs, idx)
