@@ -49,13 +49,13 @@ function polyrs(v₀::Polyform{D,T,F},
                 max_strs::Int=0) where {D,T,F}
     reducing = !isnothing(reducer)
     if reducing
-        reduce_val = reducer(v₀)
+        reduce_val = reducer(v₀, assembly_system)
     else
         reduce_val = nothing
     end
     aggregating = !isnothing(aggregator)
     if aggregating
-        aggregate_val = typeof(aggregator(v₀)[2])[]
+        aggregate_val = typeof(aggregator(v₀, assembly_system)[2])[]
     else
         aggregate_val = nothing
     end
@@ -99,10 +99,10 @@ function polyrs(v₀::Polyform{D,T,F},
                     reject_val === 2 && continue
                 end
                 if reducing
-                    reduce_val = reduce_op(reduce_val, reducer(next))
+                    reduce_val = reduce_op(reduce_val, reducer(next, assembly_system))
                 end
                 if aggregating
-                    aggregate, agr_val = aggregator(next)
+                    aggregate, agr_val = aggregator(next, assembly_system)
                     aggregate && push!(aggregate_val, agr_val)
                 end
 
