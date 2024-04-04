@@ -1,13 +1,13 @@
-function open_bond(p::Polyform, j::Integer, assembly_sytem::AssemblySystem)
+function open_bond(p::Polyform, j::Integer, assembly_system::AssemblySystem)
     for v in 1:length(p.bond_partners)
         if p.bond_partners[v] > 0
             continue
         end
         #TODO :FIX THIS INTERFACE AND DECIDE WHAT LABEL SHOULD DO
         spcs = species(p)[p.encoder.bwd[v][1]]
-        offset = spcs > 1 ? assembly_sytem._sites_sum[spcs-1] : 0
-        lbl = p.encoder.bwd[v][2] + offset
-        for (k, fk) in enumerate(@view assembly_sytem.intmat[:, lbl])
+        site = p.encoder.bwd[v][2]
+        lbl = spcs_site_to_siteidx(spcs, site, assembly_system)
+        for (k, fk) in enumerate(@view assembly_system.intmat[:, lbl])
             if fk > 0
                 j -= 1
             end
@@ -20,14 +20,14 @@ function open_bond(p::Polyform, j::Integer, assembly_sytem::AssemblySystem)
     return nothing
 end
 
-function all_open_bonds(p::Polyform, assembly_sytem::AssemblySystem)
+function all_open_bonds(p::Polyform, assembly_system::AssemblySystem)
     bonds = Tuple{Int,Int}[]
     j = 1
-    b = open_bond(p, j, assembly_sytem)
+    b = open_bond(p, j, assembly_system)
     while !isnothing(b)
         push!(bonds, b)
         j += 1
-        b = open_bond(p, j, assembly_sytem)
+        b = open_bond(p, j, assembly_system)
     end
     return bonds
 end

@@ -212,6 +212,7 @@ function polygenerate(callback::Function, assembly_system::AssemblySystem{D,T,F,
             species_j, aj =  irg_unflatten(j, assembly_system._sites_sum)
             hashval = hash(next)
 
+            #TODO: pretty this up
             monomer_opens = open_bonds[hash(bblocks[species_j])]
             new_opens = [b .+ (nfv, 0) for b in monomer_opens if b[1] != aj]
             open_bonds[hashval] = filter(x -> x ∉ bonds && x[1] != ai, open_bonds_v)

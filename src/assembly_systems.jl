@@ -54,3 +54,10 @@ function AssemblySystem(interactions::AbstractMatrix{<:Integer}, geometry::Abstr
     geometries = [geometry for _ in 1:n_species]
     return AssemblySystem(interactions, geometries, face_labels)
 end
+
+function spcs_site_to_siteidx(spcs::Integer, site::Integer, assembly_system::AssemblySystem)
+    return irg_flatten(spcs, site, assembly_system._sites_sum)
+end
+function siteidx_to_spcs_site(site_index::Integer, assembly_system::AssemblySystem)
+    return irg_unflatten(site_index, assembly_system._sites_sum)
+end
