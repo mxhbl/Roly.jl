@@ -5,7 +5,7 @@ function open_bond(p::Polyform, j::Integer, assembly_sytem::AssemblySystem)
         end
         #TODO :FIX THIS INTERFACE AND DECIDE WHAT LABEL SHOULD DO
         spcs = species(p)[p.encoder.bwd[1, v]]
-        offset = spcs > 1 ? assembly_sytem._sides_sum[spcs-1] : 0
+        offset = spcs > 1 ? assembly_sytem._sites_sum[spcs-1] : 0
         lbl = p.encoder.bwd[2, v] + offset
         for (k, fk) in enumerate(@view assembly_sytem.intmat[:, lbl])
             if fk > 0
@@ -33,12 +33,13 @@ function all_open_bonds(p::Polyform, assembly_sytem::AssemblySystem)
 end
 
 function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, assembly_system::AssemblySystem, fillhash::Bool=false) where {D,T,F}
-    n, _, nf = size(p)
+    n = size(p)
+    nvert = nvertices(p)
     geoms = geometries(assembly_system)
 
     v, bblock_side_label = bond
     i, face_i, _ = @view p.encoder.bwd[:, v]
-    spcs_j, face_j = irg_unflatten(bblock_side_label, assembly_system._sides_sum)
+    spcs_j, face_j = irg_unflatten(bblock_side_label, assembly_system._sites_sum)
     bblock = buildingblocks(assembly_system)[spcs_j]
 
     spcs = species(p)
@@ -70,7 +71,7 @@ function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, a
                 return false
             end
         
-            aedges = contract_faces(convert(Vector{Cint}, vs_i), vs_j .+ nf)
+            aedges = contract_faces(convert(Vector{Cint}, vs_i), vs_j .+ nvert)
             append!(anatomy_edges, aedges)
         end
     end
@@ -92,7 +93,7 @@ function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, a
         p.bond_partners[vj] = vi
     end
 
-    #TODO MAKE THIS PRETTY, THIS WILL CANONIZE A STRUCTURE TWICE IF GROW! is CALLED
+    #TODO MAKE THIS PRETTY
     if fillhash
         _, n = NautyGraphs._fill_hash!(p.anatomy)
         p.σ = n
@@ -131,7 +132,7 @@ end
     
 
 function shrink!(p::Polyform)
-    n, _, _ = size(p)
+    n = size(p)
     if n == 0
         return false
     end

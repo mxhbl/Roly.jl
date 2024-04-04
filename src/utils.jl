@@ -3,18 +3,6 @@ using StaticArrays
 
 HashType = UInt
 DefInt, DefFloat = Int16, Float32
-SideLoc{T} = Tuple{T,T}  # Location of a binding site within a structure, in the form (particle, side)
-CVec{N,F} = Union{SVector{N,F},MVector{N,F}}
-
-
-function cart2pol(x::F, y::Real) where {F}
-    y = convert(F, y)
-    return [sqrt(x^2 + y^2), atan(y, x) / π]
-end
-function pol2cart(r::F, ψ::Real) where {F}
-    ψ = convert(F, ψ)
-    return [r * cos(π * ψ),  r * sin(π * ψ)]
-end
 
 function irg_flatten(a::Integer, b::Integer, intervals::AbstractVector{<:Integer})
     if a == 1

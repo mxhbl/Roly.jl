@@ -48,14 +48,11 @@ positions(p::Polyform) = p.xs
 orientations(p::Polyform) = p.ψs
 
 function Base.size(p::Polyform)
-    e = ne(p.anatomy)
-    v = nv(p.anatomy)
-    return length(p.xs), (e - v) ÷ 2, v
-end #  TODO: nbonds only valid in 2D
+    return length(p.xs)
+end
+nvertices(p::Polyform) = nv(p.anatomy)
 function Base.show(io::Core.IO, p::Polyform{D,T,F}) where {D,T,F}
-    let (n, m, _) = size(p)
-        print(io, "Polyform{$D,$T,$F}[n=$n, k=$m]")
-    end
+    print(io, "Polyform{$D,$T,$F}[n=$(siez(p))]")
 end
 Base.show(io::Core.IO, ::Type{Polyform{D,T,F}}) where {D,T,F} = print(io, "Polyform{$D,$T,$F}")
 
@@ -103,10 +100,10 @@ function create_monomer(geometry::AbstractGeometry{T,F},
                         species_idx::Integer,
                         face_labels::AbstractVector{<:Integer}) where {T,F}
 
-    if geometry_dimension(geometry) == 2
+    if dimension(geometry) == 2
         xs = [Point{2,F}(0., 0.)]
         ψs = [Angle{F}(0.)]
-    elseif geometry_dimension(geometry) == 3
+    elseif dimension(geometry) == 3
         xs = [Point{3,F}(0., 0., 0.)]
         ψs = [Quaternion{F}(1., 0., 0., 0.)]
     else

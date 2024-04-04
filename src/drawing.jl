@@ -74,7 +74,7 @@ function draw_polyform(pform, assembly_system; r=200, species_colors=nothing)
     xs = [d * SVector(1, -1) .* x for x in pform.xs]
     ψs = [ψ.θ for ψ in pform.ψs]
 
-    polygons = [length(assembly_system.geometries[k])
+    polygons = [nsites(assembly_system.geometries[k])
                 for k in species(pform)]
 
     # Make sure the center of mass is centered

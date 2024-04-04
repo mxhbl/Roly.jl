@@ -18,7 +18,7 @@ function adj!(u::Polyform{T,F}, v::Polyform{T,F}, j::Integer, hashes::Vector{Has
     ### TODO: We should exploit that canonical labels are guaranteed (see Nauty User Guide p.4) to be in order of color
     ### So, if we know the color of the particle that would be removed, we can filter the possible offspring
     bblocks = buildingblocks(assembly_system)
-    if size(v)[1] == 0
+    if size(v) == 0
         if j > length(bblocks)
             return false, j + 1
         end
@@ -96,7 +96,7 @@ function polyrs(v₀::Polyform{D,T,F},
                 if rejecting
                     reject_val = rejector(next, assembly_system)
                     # 0: dont reject, 1: reject post, 2: reject pre, 3: break immediately
-                    reject_val === 2 && continue
+                    reject_val == 2 && continue
                 end
                 if reducing
                     reduce_val = reduce_op(reduce_val, reducer(next, assembly_system))
@@ -113,10 +113,10 @@ function polyrs(v₀::Polyform{D,T,F},
                 end
 
                 if rejecting
-                    if reject_val === 1
+                    if reject_val == 1
                         depth -= 1
                         continue
-                    elseif reject_val === 3
+                    elseif reject_val == 3
                         break_triggered = true
                         break
                     end
@@ -197,7 +197,8 @@ function polygenerate(callback::Function, assembly_system::AssemblySystem{D,T,F,
 
     while !isempty(queue) && n_strs < max_strs
         v = dequeue!(queue)
-        n, _, nfv = size(v)
+        n = size(v)
+        nfv = nvertices(v)
         if n >= max_size
             continue
         end
@@ -214,7 +215,7 @@ function polygenerate(callback::Function, assembly_system::AssemblySystem{D,T,F,
             end
 
             next = copy(u)
-            species_j, aj =  irg_unflatten(j, assembly_system._sides_sum)
+            species_j, aj =  irg_unflatten(j, assembly_system._sites_sum)
             hashval = hash(next)
 
             monomer_opens = open_bonds[hash(bblocks[species_j])]
