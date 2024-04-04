@@ -45,26 +45,22 @@ function polyrs(v₀::Polyform{D,T,F},
                 reduce_op::FnorNothing,
                 aggregator::FnorNothing,
                 rejector::FnorNothing,
-                unexplored_channel::Union{<:AbstractChannel,<:RemoteChannel,Nothing}=nothing,
-                output_channel::Union{<:AbstractChannel,<:RemoteChannel,Nothing}=nothing,
                 max_depth::Int=0,
                 max_strs::Int=0) where {D,T,F}
-    reduction = !isnothing(reducer)
-    if reduction
+    reducing = !isnothing(reducer)
+    if reducing
         reduce_val = reducer(v₀)
     else
         reduce_val = nothing
     end
-    aggregation = !isnothing(aggregator)
-    if aggregation
+    aggregating = !isnothing(aggregator)
+    if aggregating
         aggregate_val = typeof(aggregator(v₀)[2])[]
     else
         aggregate_val = nothing
     end
     rejecting = !isnothing(rejector)
-    return_unexplored = !isnothing(unexplored_channel)
 
-    d0 = size(v₀)[1]
     depth = 0
     n_strs = 0
 
@@ -85,11 +81,9 @@ function polyrs(v₀::Polyform{D,T,F},
     end
 
     lowest_depth = 0
-    n_unexplored = 0
     break_triggered = false
 
     while true
-        unexplored = false
         success, j_new = adj!(u, v, js[end], hashes[end], assembly_system)
         next = u
         if success
@@ -104,10 +98,10 @@ function polyrs(v₀::Polyform{D,T,F},
                     # 0: dont reject, 1: reject post, 2: reject pre, 3: break immediately
                     reject_val === 2 && continue
                 end
-                if reduction
+                if reducing
                     reduce_val = reduce_op(reduce_val, reducer(next))
                 end
-                if aggregation
+                if aggregating
                     aggregate, agr_val = aggregator(next)
                     aggregate && push!(aggregate_val, agr_val)
                 end
@@ -116,15 +110,6 @@ function polyrs(v₀::Polyform{D,T,F},
                 depth += 1
                 if depth > lowest_depth
                     lowest_depth = depth
-                end
-
-                if !isnothing(output_channel)
-                    out = lowest_depth + d0, (reduce_val, aggregate_val, break_triggered)
-                    try
-                        put!(output_channel, out)
-                    catch
-                        return
-                    end
                 end
 
                 if rejecting
@@ -137,19 +122,13 @@ function polyrs(v₀::Polyform{D,T,F},
                     end
                 end
 
-                if !return_unexplored && n_strs >= max_strs
+                if n_strs >= max_strs
                     break_triggered = true
                     break
                 end
 
-                if depth == max_depth || n_strs >= max_strs
-                    unexplored = true
-                end
-
-                if unexplored
+                if depth == max_depth
                     depth -= 1
-                    return_unexplored && put!(unexplored_channel, copy(next))
-                    n_unexplored += 1
                     continue
                 end
 
@@ -162,7 +141,7 @@ function polyrs(v₀::Polyform{D,T,F},
         end
 
         if depth > 0
-            f!(k, v)    # TODO speed this up by storing structures
+            f!(k, v)    # TODO could speed this up by storing structures
             copy!(v, k)
 
             depth -= 1
@@ -174,27 +153,20 @@ function polyrs(v₀::Polyform{D,T,F},
         end
     end
 
-    if isnothing(output_channel)
-        return (n_strs, lowest_depth), (reduce_val, aggregate_val, break_triggered)
-    end
+    return (n_strs, lowest_depth), (reduce_val, aggregate_val, break_triggered)
 end
 
 function polyenum(assembly_system::AssemblySystem{D,T,F,G};
                   max_size::Number=Inf, max_strs::Number=Inf,
                   reducer::FnorNothing=nothing,
-                  reduce_op::FnorNothing=nothing,
+                  reduce_op::FnorNothing=Base.:+,
                   aggregator::FnorNothing=nothing,
                   rejector::FnorNothing=nothing) where {D,T,F,G}
     v₀ = Polyform{D,T,F}()
     max_size = isinf(max_size) ? 0 : convert(Int, max_size)
     max_strs = isinf(max_strs) ? 0 : convert(Int, max_strs)
 
-    if !isnothing(reducer) && isnothing(reduce_op)
-        reduce_op = Base.:+
-    end
-
-    out_base, out_vals = polyrs(v₀, assembly_system, reducer, reduce_op, aggregator,
-                                rejector, nothing, nothing, max_size, max_strs)
+    out_base, out_vals = polyrs(v₀, assembly_system, reducer, reduce_op, aggregator, rejector, max_size, max_strs)
     if isnothing(reducer) && isnothing(aggregator) && isnothing(rejector)
         return out_base
     else
