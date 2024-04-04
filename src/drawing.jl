@@ -1,5 +1,5 @@
-using Luxor
-using Plots, ColorSchemes
+import Luxor
+using Plots: @colorant_str, palette, color
 using Statistics: mean
 
 const default_colors = palette([colorant"#7E9EC4", colorant"#E64B48", colorant"#FFC200",
@@ -24,41 +24,41 @@ function draw_ngon(n, a; c="grey90", shades=nothing)
 
     interior_angle = (n - 2) / n * π
 
-    setline(a / 30)
+    Luxor.setline(a / 30)
 
-    @layer begin
+    Luxor.@layer begin
         for (c, θ) in zip(colors, angles)
-            @layer begin
+            Luxor.@layer begin
                 Luxor.rotate(θ)
-                ngon_outer = ngonside(O, a_out, n, orientation; vertices=true)
+                ngon_outer = Luxor.ngonside(Luxor.O, a_out, n, orientation; vertices=true)
                 clip_points = 1.2 * [ngon_outer[2], Luxor.Point(0, 0), ngon_outer[1]]
-                clip_poly = poly(clip_points, :clip)
+                clip_poly = Luxor.poly(clip_points, :clip)
 
-                sethue(c)
-                polysmooth(ngon_outer, corner_r, :fill)
+                Luxor.sethue(c)
+                Luxor.polysmooth(ngon_outer, corner_r, :fill)
             end
         end
 
         # Draw the outline
-        sethue("black")
-        ngon_outer = ngonside(O, a_out, n, orientation; vertices=true)
-        polysmooth(ngon_outer, corner_r, :stroke)
+        Luxor.sethue("black")
+        ngon_outer = Luxor.ngonside(Luxor.O, a_out, n, orientation; vertices=true)
+        Luxor.polysmooth(ngon_outer, corner_r, :stroke)
 
         # Draw the hole in the center
-        ngon_inner = ngonside(O, a_in, n, orientation; vertices=true)
+        ngon_inner = Luxor.ngonside(Luxor.O, a_in, n, orientation; vertices=true)
 
-        sethue("white")
-        polysmooth(ngon_inner, corner_r, :fill)
+        Luxor.sethue("white")
+        Luxor.polysmooth(ngon_inner, corner_r, :fill)
 
-        sethue("black")
-        polysmooth(ngon_inner, corner_r, :stroke)
+        Luxor.sethue("black")
+        Luxor.polysmooth(ngon_inner, corner_r, :stroke)
 
         # Draw lines delimiting the binding sides
         offset = 1 / sin(interior_angle / 2) - 1
         multiplyer = n == 3 ? 2 : 1 # don't ask me why this is needed
         for (ngi, ngo) in zip(ngon_inner, ngon_outer)
-            line(ngi * (1 - multiplyer * corner_r / a_in * offset),
-                 ngo * (1 - multiplyer * corner_r / a_out * offset), :stroke)
+            Luxor.line(ngi * (1 - multiplyer * corner_r / a_in * offset),
+                       ngo * (1 - multiplyer * corner_r / a_out * offset), :stroke)
         end
     end
 end
@@ -83,7 +83,7 @@ function draw_polyform(pform, assembly_system; r=200, species_colors=nothing)
 
     # Draw all the triangles at the correct positions
     for (particle, (x, ψ)) in enumerate(zip(xs, ψs))
-        @layer begin
+        Luxor.@layer begin
             Luxor.translate(x...)
             Luxor.rotate(-ψ * π)
             draw_ngon(polygons[particle], r; c=species_colors[spes[particle]])
@@ -93,7 +93,7 @@ function draw_polyform(pform, assembly_system; r=200, species_colors=nothing)
     return
 end
 
-function draw_polyforms(structures, assembly_system; r=50, box_size=5, ncols=4, species_colors=nothing,
+function draw_polyform_grid(structures, assembly_system; r=50, box_size=5, ncols=4, species_colors=nothing,
                          structure_names=nothing)
     nstructures = length(structures)
     nrows = nstructures ÷ ncols
@@ -103,12 +103,12 @@ function draw_polyforms(structures, assembly_system; r=50, box_size=5, ncols=4, 
 
     structures = [structures[i] for i in sort(collect(keys(structures)))]
 
-    tiles = Tiler(box_size * r * ncols, box_size * r * nrows, nrows, ncols)
+    tiles = Luxor.Tiler(box_size * r * ncols, box_size * r * nrows, nrows, ncols)
 
     if isnothing(structure_names)
         i = 1
         for (structure, (pos, n)) in zip(structures, tiles)
-            @layer begin
+            Luxor.@layer begin
                 Luxor.translate(pos)
                 draw_polyform(structure, assembly_system; r=r, species_colors=species_colors)
             end
@@ -117,10 +117,10 @@ function draw_polyforms(structures, assembly_system; r=50, box_size=5, ncols=4, 
     else
         i = 1
         for (structure, (pos, n), name) in zip(structures, tiles, structure_names)
-            @layer begin
+            Luxor.@layer begin
                 Luxor.translate(pos)
-                draw_polyform(structure; r=r, species_colors=species_colors)
-                fontsize(r / 2)
+                draw_polyform(structure, assembly_system; r=r, species_colors=species_colors)
+                Luxor.fontsize(r / 2)
                 Luxor.text(string(name), Luxor.Point(-2 * r / 2, -3 * r / 2))
             end
             i += 1
@@ -128,12 +128,13 @@ function draw_polyforms(structures, assembly_system; r=50, box_size=5, ncols=4, 
     end
 end
 
-macro draw_polyform_png(s, assembly_system, r=50, ncols=4, box_size=5, species_colors=default_colors, size=(1000, 1000),
-                     filename="figures/polyforms.png")
-    return :(@png draw_polyforms($s, $assembly_system, r=$r, box_size=$box_size, ncols=$ncols, species_colors=$species_colors) $(size)[1] $(size)[2] $filename)
-end
-
-macro draw_polyform_pdf(s, assembly_system, r=50, ncols=4, box_size=5, species_colors=default_colors, size=(1000, 1000),
-                     filename="figures/polyforms.png")
-    return :(@pdf draw_polyforms($s, $assembly_system, r=$r, box_size=$box_size, ncols=$ncols, species_colors=$species_colors) $(size[1]) $(size[2]) $filename)
+function draw_polyforms(polyforms::AbstractVector{<:Polyform}, assembly_system::AssemblySystem, filename::String; r=50, ncols=4, box_size=5, species_colors=default_colors, size=(1000, 1000))
+    extension = splitext(filename)[end]
+    if extension == ".png"
+        return Luxor.@png(draw_polyform_grid(polyforms, assembly_system, r=r, box_size=box_size, ncols=ncols, species_colors=species_colors), size[1], size[2], filename)
+    elseif extension == ".pdf"
+        return Luxor.@pdf(draw_polyform_grid(polyforms, assembly_system, r=r, box_size=box_size, ncols=ncols, species_colors=species_colors), size[1], size[2], filename)
+    else
+        error("Can only render png or pdf.")
+    end
 end

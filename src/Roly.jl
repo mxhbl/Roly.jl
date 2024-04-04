@@ -1,9 +1,9 @@
 module Roly
 
 export polyenum, polygenerate
-export AssemblySystem, InteractionDiagram, InteractionEdge, Polyform
+export AssemblySystem, Polyform
 export PolygonGeometry, UnitTriangleGeometry, UnitSquareGeometry, UnitPentagonGeometry, UnitHexagonGeometry, UnitCubeGeometry
-export draw_polyform, draw_polyforms, draw_polyform_png, draw_polyform_pdf
+export draw_polyform, draw_polyform_grid, draw_polyforms
 
 include("utils.jl")
 include("geometry.jl")
