@@ -1,3 +1,0 @@
-@testset "structure" begin
-    
-end

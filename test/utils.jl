@@ -1,4 +1,4 @@
-@testset "PolyEncoder" begin
+@testset "encoder" begin
     n, s = 4, 3
     enc = Roly.PolyEncoder([[[1], [2], [3]], [[4], [5], [6]], [[7], [8], [9]], [[10], [11], [12]]])
     for i in 1:n, j in 1:s
