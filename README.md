@@ -11,7 +11,7 @@ Once Roly.jl is installed, it can be imported with
 using Roly
 ```
 ## Basic Usage
-Structure enuemration in Roly.jl starts from an `AssemblySystem`, which is a list of building block geometries together with an interaction matrix that specificies which binding site of which building block are allowed to bind.
+Structure enumeration in Roly.jl starts from an `AssemblySystem`, which is a list of building block geometries together with an interaction matrix that specificies which binding site of which building block are allowed to bind.
 The allowed structures can then be enumerated with the function `polyenum`, or generated and stored with `polygen`.
 
 ### Assembly System Definition
