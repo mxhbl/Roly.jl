@@ -4,7 +4,7 @@ using Graphs
 using NautyGraphs
 
 mutable struct Polyform{D,T<:Integer,F<:AbstractFloat,R<:RotationOperator{F}}
-    anatomy::DirectedDenseNautyGraph{Cint}
+    anatomy::NautyDiGraph
     encoder::PolyEncoder{T}
     bond_partners::Vector{T}
     species::Vector{T}
@@ -36,7 +36,7 @@ function Polyform{D,T,F}() where {D,T,F}
     else
         ψs = Quaternion{F}[]
     end
-    return Polyform{D,T,F}(DirectedDenseNautyGraph(0), PolyEncoder{T}(), zeros(T, 0), zeros(T, 0), SVector{2,F}[], ψs, 0)
+    return Polyform{D,T,F}(NautyDiGraph(0), PolyEncoder{T}(), zeros(T, 0), zeros(T, 0), SVector{2,F}[], ψs, 0)
 end
 anatomy(p::Polyform) = p.anatomy
 faces(::Type{T}, p::Polyform) where {T} = convert(Vector{T}, p.anatomy.labels)
@@ -79,9 +79,8 @@ end
 function Base.hash(p::Polyform, h::UInt64)
     return hash(p.anatomy, h)
 end
-function Base.:(==)(si::Polyform, sj::Polyform)
-    return hash(si.anatomy) == hash(sj.anatomy)
-end
+is_isomorphic(p::Polyform, h::Polyform) = hash(p.anatomy) == hash(h.anatomy)
+≃(p::Polyform, h::Polyform) = is_isomorphic(p, h)
 
 function Base.copy(p::Polyform)
     return Polyform(copy(p.anatomy), copy(p.encoder), copy(p.bond_partners), copy(p.species), copy(p.xs), copy(p.ψs), p.σ)
@@ -111,7 +110,7 @@ function create_monomer(geometry::AbstractGeometry{T,F},
         error("Polyforms are only implemented for dimension 2 and 3.")
     end
 
-    return Polyform(DirectedDenseNautyGraph(geometry.anatomy, convert(Vector{T}, face_labels)),
+    return Polyform(NautyDiGraph(geometry.anatomy, convert(Vector{T}, face_labels)),
                     copy(geometry.encoder),
                     zeros(T, nvertices(geometry.encoder)), # TODO: clean this up
                     [T(species_idx)],

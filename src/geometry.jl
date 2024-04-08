@@ -11,7 +11,7 @@ struct PolygonGeometry{T<:Integer,F<:AbstractFloat} <: AbstractGeometry{T,F}
     θs_ref::Vector{Angle{F}}                # Rotation necessary to rotate side i into reference position
     Δθs::Vector{Angle{F}}                   # Rotation to be applied to the added particle (assumed to be in reference orientation) once attached to side i 
     corners::Vector{Point{2,F}}             # Corners of the Polygon used for overlap checking
-    anatomy::DirectedDenseNautyGraph{Cint}
+    anatomy::NautyDiGraph
     encoder::PolyEncoder{T}
     R_min::F
     R_max::F
@@ -27,7 +27,7 @@ struct PolygonGeometry{T<:Integer,F<:AbstractFloat} <: AbstractGeometry{T,F}
         corners = [convert.(F, r_out * [cos(π * (θ.θ + 1/n)), sin(π * (θ.θ + 1/n))]) for θ in θs_ref] #TODO: clean up the θ.θ
 
         xs = [SVector{2,F}(pol2cart(r, -θ.θ - 1/2)) for (r, θ) in zip(rs, θs_ref)]
-        anatomy = DirectedDenseNautyGraph(cycle_digraph(n))
+        anatomy = NautyDiGraph(cycle_digraph(n))
         encoder = PolyEncoder([[[T(i)] for i in 1:length(xs)]])
 
         R_min = minimum(norm.(xs))
@@ -48,7 +48,7 @@ struct PolyhedronGeometry{T,F<:AbstractFloat} <: AbstractGeometry{T,F}
     θs_ref::Vector{Quaternion{F}}         # Rotation necessary to rotate side i into reference position   
     Δθs::Vector{Quaternion{F}}            # Rotation to be applied to the added particle (assumed to be in reference orientation) once attached to side i 
     corners::Vector{Point{3,F}}
-    anatomy::DirectedDenseNautyGraph{Cint}  # Oriented graph of the dual polyhedron associated with the bb symmetry group
+    anatomy::NautyDiGraph                 # Oriented graph of the dual polyhedron associated with the bb symmetry group
     encoder::PolyEncoder{T}
     R_min::F
     R_max::F
@@ -87,7 +87,7 @@ struct PolyhedronGeometry{T,F<:AbstractFloat} <: AbstractGeometry{T,F}
                 i, j = e
                 G[i, j] = G[j, i] = 1
             end
-            anatomy = DirectedDenseNautyGraph(G)
+            anatomy = NautyDiGraph(G)
             encoder = PolyEncoder([[collect(T, i:i+3) for i in 1:4:24]])
 
             R_min = minimum(norm.(xs))

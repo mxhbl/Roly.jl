@@ -122,7 +122,7 @@ function are_bridge(g::AbstractNautyGraph, vs::AbstractVector{<:Integer})
 
     return !vertices_connected(g, findfirst(neighs), findall(neighs), forbidden)
 end
-function vertices_connected(g::DirectedDenseNautyGraph, v0::Integer, 
+function vertices_connected(g::NautyDiGraph, v0::Integer, 
     targets::AbstractVector{<:Integer}, forbidden::AbstractVector{<:Integer})
 
     n = nv(g)

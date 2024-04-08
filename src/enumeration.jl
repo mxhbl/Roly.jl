@@ -86,7 +86,7 @@ function polyrs(v₀::Polyform{D,T,F},
 
             f!(k, next)
 
-            if k == v
+            if k ≃ v
                 if rejecting
                     reject_val = rejector(next, assembly_system)
                     # 0: dont reject, 1: reject post, 2: reject pre, 3: break immediately
