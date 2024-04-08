@@ -34,9 +34,9 @@
     @test nstrs_137_enum == 137
     @test nstrs_cyc_enum == 283
 
-    nstrs_16_gen = polygenerate(I16, max_size=Inf) |> length
-    nstrs_137_gen = polygenerate(I137, max_size=Inf) |> length
-    nstrs_cyc_gen = polygenerate(Icyc, max_size=Inf) |> length
+    nstrs_16_gen = polygen(I16, max_size=Inf) |> length
+    nstrs_137_gen = polygen(I137, max_size=Inf) |> length
+    nstrs_cyc_gen = polygen(Icyc, max_size=Inf) |> length
 
     @test nstrs_16_gen == 16
     @test nstrs_137_gen == 137
@@ -85,9 +85,9 @@
     @test nstrs_polyiamond_enum == n_polyiamonds_cumulative
     @test nstrs_polycube_enum == n_polycubes_cumulative
 
-    nstrs_polymino_gen = [length(polygenerate(I_polymino, max_size=i)) for i in 1:length(n_polyminoes_cumulative)]
-    nstrs_polyiamond_gen = [length(polygenerate(I_polyiamond, max_size=i)) for i in 1:length(n_polyiamonds_cumulative)]
-    nstrs_polycube_gen = [length(polygenerate(I_polycube, max_size=i)) for i in 1:length(n_polycubes_cumulative)]
+    nstrs_polymino_gen = [length(polygen(I_polymino, max_size=i)) for i in 1:length(n_polyminoes_cumulative)]
+    nstrs_polyiamond_gen = [length(polygen(I_polyiamond, max_size=i)) for i in 1:length(n_polyiamonds_cumulative)]
+    nstrs_polycube_gen = [length(polygen(I_polycube, max_size=i)) for i in 1:length(n_polycubes_cumulative)]
 
     @test nstrs_polymino_gen == n_polyminoes_cumulative
     @test nstrs_polyiamond_gen == n_polyiamonds_cumulative

@@ -169,7 +169,7 @@ function polyenum(assembly_system::AssemblySystem{D,T,F,G};
 end
 
 
-function polygenerate(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
+function polygen(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
                       max_size=Inf, max_strs=Inf) where {D,T,F,G}
     bblocks = buildingblocks(assembly_system)
 
@@ -229,6 +229,6 @@ function polygenerate(callback::Function, assembly_system::AssemblySystem{D,T,F,
 
     return values
 end
-function polygenerate(assembly_system::AssemblySystem; kwargs...)
-    return polygenerate(identity, assembly_system; kwargs...)
+function polygen(assembly_system::AssemblySystem; kwargs...)
+    return polygen(identity, assembly_system; kwargs...)
 end

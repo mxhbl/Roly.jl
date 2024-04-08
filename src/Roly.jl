@@ -1,6 +1,6 @@
 module Roly
 
-export polyenum, polygenerate
+export polyenum, polygen
 export AssemblySystem, Polyform
 export PolygonGeometry, UnitTriangleGeometry, UnitSquareGeometry, UnitPentagonGeometry, UnitHexagonGeometry, UnitCubeGeometry
 export draw_polyform, draw_polyform_grid, draw_polyforms
