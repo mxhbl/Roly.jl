@@ -6,10 +6,7 @@ To install Roly.jl and its dependencies directly from your Julia REPL, first pre
 pkg> add https://github.com/maxhbl/NautyGraphs.jl
 pkg> add https://github.com/maxhbl/Roly.jl
 ```
-Once Roly.jl is installed, it can be imported with
-```
-using Roly
-```
+
 ## Basic Usage
 Structure enumeration in Roly.jl starts from an `AssemblySystem`, which is a list of building block geometries together with an interaction matrix that specificies which binding site of which building block are allowed to bind.
 The allowed structures can then be enumerated with the function `polyenum`, or generated and stored with `polygen`.
@@ -17,6 +14,8 @@ The allowed structures can then be enumerated with the function `polyenum`, or g
 ### Assembly System Definition
 To illustrate the basic process, let's construct an assembly system consisting of four species of triangular building blocks. You can define the binding rules via a matrix, where every row defines an allowed bond in the form `[species_i site_i species_j site_j]`. For example, the row `[1 3 2 3]` indicates that site 3 of species 1 is allowed to bind to site 3 of species 2. Roly already comes with definitions for simple polygonal and polyhedral building block geometries, allowing us to specify triangular building blocks via a `UnitTriangleGeometry`. The `AssemblySystem` constructor takes either a list of geometries or a single geometry if all building blocks are identially shaped.
 ```
+using Roly
+
 bonds = [1 3 2 3;
          2 2 3 2;
          2 1 4 1;
