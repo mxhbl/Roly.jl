@@ -12,5 +12,4 @@ include("polyform.jl")
 include("assembly_systems.jl")
 include("concatenation.jl")
 include("enumeration.jl")
-include("drawing.jl")
 end

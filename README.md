@@ -36,10 +36,6 @@ If you want to store all possible structures in memory for further processing, y
 ```
 strs = polygen(asys; max_size=20, max_strs=100_000)`
 ```
-The structures can then be further processed, or rendered using
-```
-draw_polyforms(strs, asys, "<<FILENAME>>.<<png / pdf>>")
-```
 
 ## Advanced Usage
 TODO: make a doc page that includes
