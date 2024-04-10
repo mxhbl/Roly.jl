@@ -3,8 +3,8 @@ Roly.jl (_Reverse-Search Polyform Enumerator_) is a Julia package for the enumer
 ## Installation
 To install Roly.jl and its dependencies directly from your Julia REPL, first press `]` to enter Pkg mode, and then run
 ```
-pkg> add https://github.com/maxhbl/NautyGraphs.jl
-pkg> add https://github.com/maxhbl/Roly.jl
+pkg> add https://github.com/mxhbl/NautyGraphs.jl
+pkg> add https://github.com/mxhbl/Roly.jl
 ```
 
 ## Basic Usage
