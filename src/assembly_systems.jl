@@ -13,16 +13,13 @@ geometries(sys::AssemblySystem) = sys.geometries
 Base.size(sys::AssemblySystem) = sys.n_species, sys.n_edges
 Base.show(io::Core.IO, A::AssemblySystem{D,T,F}) where {D,T,F} = print(io, "AssemblySytem{$D,$T,$F}[n=$(A.n_species), k=$(A.n_edges)]")
 
-function AssemblySystem(interactions::AbstractMatrix{<:Integer}, geometries::Vector{<:AbstractGeometry{T,F}}, face_labels=nothing) where {T,F}
+function AssemblySystem(interactions::AbstractMatrix, geometries::Vector{<:AbstractGeometry{T,F}}, face_labels=nothing) where {T,F}
     ds = [dimension(g) for g in geometries]
     D = first(ds)
     @assert all(ds .== D)
 
     n_species = length(geometries)
-
     sites = [nsites(geom) for geom in geometries]
-    n_sides = sum(sites; init=0)
-    n_edges = size(interactions, 1)
 
     monomers = Polyform{D,T,F}[]
     sites_sum = cumsum(sites)
@@ -40,13 +37,8 @@ function AssemblySystem(interactions::AbstractMatrix{<:Integer}, geometries::Vec
         last_label = fl[end]
     end
 
-    interaction_matrix = falses(n_sides, n_sides)
-    for edge in eachrow(interactions)
-        a, b, c, d = edge
-        i, j = irg_flatten(a, b, sites_sum), irg_flatten(c, d, sites_sum)
-        interaction_matrix[i, j] = interaction_matrix[j, i] = true
-    end
-
+    interaction_matrix = instantiate_interactionmatrix(interactions, sites)
+    n_edges = sum(interaction_matrix) ÷ 2
     return AssemblySystem{D,T,F,eltype(geometries)}(interaction_matrix, monomers, geometries, n_species, n_edges, sites_sum)
 end
 function AssemblySystem(interactions::AbstractMatrix{<:Integer}, geometry::AbstractGeometry{T,F}, face_labels=nothing) where {T,F}
@@ -60,4 +52,21 @@ function spcs_site_to_siteidx(spcs::Integer, site::Integer, assembly_system::Ass
 end
 function siteidx_to_spcs_site(site_index::Integer, assembly_system::AssemblySystem)
     return irg_unflatten(site_index, assembly_system._sites_sum)
+end
+
+function instantiate_interactionmatrix(interactions::AbstractMatrix{<:Integer}, sites)
+    n_sites = sum(sites; init=0)
+    sites_sum = cumsum(sites)
+
+    interaction_matrix = falses(n_sites, n_sites)
+    for edge in eachrow(interactions)
+        a, b, c, d = edge
+        i, j = irg_flatten(a, b, sites_sum), irg_flatten(c, d, sites_sum)
+        interaction_matrix[i, j] = interaction_matrix[j, i] = true
+    end
+    return interaction_matrix
+end
+function instantiate_interactionmatrix(interactions::BitMatrix, args...)
+    interaction_matrix = BitMatrix(interactions)
+    return interaction_matrix
 end
