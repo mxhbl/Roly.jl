@@ -1,10 +1,10 @@
 # Roly.jl
-Roly.jl (_Reverse-Search Polyform Enumerator_) is a Julia package for the enumeration of arbitrary polyforms via [reverse search](https://en.wikipedia.org/wiki/Reverse-search_algorithm). It allows you to exhaustively enumerate structures composed out of a set of arbitrarily shaped building blocks in 2D or 3D and provides an interface to define your own building block geometries and binding rules.
+Roly.jl (_Reverse-Search Polyform Enumerator_) is a Julia package for the enumeration of arbitrary polyforms via [reverse search](https://en.wikipedia.org/wiki/Reverse-search_algorithm). It allows you to exhaustively enumerate structures composed out of a set of arbitrarily shaped building blocks in 2D or 3D and provides an interface to define your own building block geometries and binding rules. Roly.jl is under active development, and breaking changes can occur at any time. Because of its depencencies, Roly.jl currently requires a POSIX operating system (this requirement will be lifted in the future).
 ## Installation
 To install Roly.jl and its dependencies directly from your Julia REPL, first press `]` to enter Pkg mode, and then run
 ```
-pkg> add https://github.com/maxhbl/NautyGraphs.jl
-pkg> add https://github.com/maxhbl/Roly.jl
+pkg> add https://github.com/mxhbl/NautyGraphs.jl
+pkg> add https://github.com/mxhbl/Roly.jl
 ```
 
 ## Basic Usage
