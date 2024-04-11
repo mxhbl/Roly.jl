@@ -67,6 +67,46 @@ function instantiate_interactionmatrix(interactions::AbstractMatrix{<:Integer}, 
     return interaction_matrix
 end
 function instantiate_interactionmatrix(interactions::BitMatrix, args...)
+    @assert interactions == interactions'
     interaction_matrix = BitMatrix(interactions)
     return interaction_matrix
+end
+
+function anatomy(asys::AssemblySystem)
+    imat = interaction_matrix(asys)
+    n_sites = size(imat, 1)
+    n_edges = sum(imat) ÷ 2
+
+    A = falses(n_sites + n_edges, n_sites + n_edges)
+    edge_counter = 1
+    for i in axes(imat, 1), j in i+1:size(imat, 2)
+        if imat[i, j] == 0
+            continue
+        end
+
+        A[i, n_sites+edge_counter] = true
+        A[j, n_sites+edge_counter] = true
+        A[n_sites+edge_counter, i] = true
+        A[n_sites+edge_counter, j] = true
+        edge_counter += 1
+    end
+    
+    i = 1
+    for geom in asys.geometries
+        a = adjacency_matrix(geom.anatomy)
+        n = size(a, 1)
+        A[i:i+n-1, i:i+n-1] .+= a
+        i += n
+    end
+
+    vertex_colors = [zeros(Cint,n_sites); ones(Cint, n_edges)]
+
+    anatomy = NautyDiGraph(A, vertex_colors)
+    return anatomy
+end
+
+function Base.hash(asys::AssemblySystem)
+    a = anatomy(asys)
+    a_prime = NautyDiGraph(adjacency_matrix(a)', a.labels)
+    return hash(sort([hash(a), hash(a_prime)]))
 end
