@@ -26,7 +26,7 @@ asys = AssemblySystem(bonds, UnitTriangleGeometry)
 ### Enumeration of Structures
 Once you have defined an assembly system, you can use `polyenum` to enumerate all possible structures:
 ```
-n_strs, largest_strsize = polyenum(asys; max_size=20, max_strs=100_000)`
+n_strs, largest_strsize = polyenum(asys; max_size=20, max_strs=100_000)
 ```
 The simple system we have chosen here only allows 16 different structures to form. In general however, the number of structures might be unbounded and it is advisable to always impose either a maximal structure size (`max_size`), or maximal number of structures (`max_strs`) to be enumerated. In addition, `polyenum` allows the user to pass functions for processing, selectively storing, or rejecting structures (see docs).
 
@@ -34,7 +34,7 @@ The simple system we have chosen here only allows 16 different structures to for
 If you want to store all possible structures in memory for further processing, you can either use `polyenum` with an aggregation function, or use `polygen`. `polygen` stores all structures in memory instead of using reverse search, making it slightly faster, but less memory efficient than `polyenum`.
 `polygen` uses the same interface as `polyenum`, but simply returns a list of structures:
 ```
-strs = polygen(asys; max_size=20, max_strs=100_000)`
+strs = polygen(asys; max_size=20, max_strs=100_000)
 ```
 
 ## Advanced Usage
