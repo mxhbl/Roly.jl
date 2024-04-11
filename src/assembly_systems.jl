@@ -77,17 +77,17 @@ function anatomy(asys::AssemblySystem)
     n_sites = size(imat, 1)
     n_edges = sum(imat) ÷ 2
 
-    A = falses(n_sites + n_edges, n_sites + n_edges)
+    A = zeros(Int, n_sites + n_edges, n_sites + n_edges)
     edge_counter = 1
     for i in axes(imat, 1), j in i+1:size(imat, 2)
         if imat[i, j] == 0
             continue
         end
 
-        A[i, n_sites+edge_counter] = true
-        A[j, n_sites+edge_counter] = true
-        A[n_sites+edge_counter, i] = true
-        A[n_sites+edge_counter, j] = true
+        A[i, n_sites+edge_counter] = 1
+        A[j, n_sites+edge_counter] = 1
+        A[n_sites+edge_counter, i] = 1
+        A[n_sites+edge_counter, j] = 1
         edge_counter += 1
     end
     
