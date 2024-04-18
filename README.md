@@ -37,6 +37,13 @@ If you want to store all possible structures in memory for further processing, y
 strs = polygen(asys; max_size=20, max_strs=100_000)
 ```
 
+### Visualization
+To visualize 2D structures, use [RolyVis.jl](https://github.com/mxhbl/RolyVis.jl):
+```
+using RolyVis
+draw_polyforms(strs, asys, "filename.pdf//png")
+```
+
 ## Advanced Usage
 TODO: make a doc page that includes
 - Custom Geometry Definition
