@@ -12,7 +12,7 @@ Structure enumeration in Roly.jl starts from an `AssemblySystem`, which is a lis
 The allowed structures can then be enumerated with the function `polyenum`, or generated and stored with `polygen`.
 
 ### Assembly System Definition
-To illustrate the basic process, let's construct an assembly system consisting of four species of triangular building blocks. You can define the binding rules via a matrix, where every row defines an allowed bond in the form `[species_i site_i species_j site_j]`. For example, the row `[1 3 2 3]` indicates that site 3 of species 1 is allowed to bind to site 3 of species 2. Roly already comes with definitions for simple polygonal and polyhedral building block geometries, allowing us to specify triangular building blocks via a `UnitTriangleGeometry`. The `AssemblySystem` constructor takes either a list of geometries or a single geometry if all building blocks are identially shaped.
+To illustrate the basic process, let's construct an assembly system consisting of four species of triangular building blocks. You can define the binding rules via a matrix, where every row defines an allowed bond in the form `[species_i site_i species_j site_j]`. For example, the row `[1 3 2 3]` indicates that site 3 of species 1 is allowed to bind to site 3 of species 2. Roly already comes with definitions for simple polygonal and polyhedral building block geometries, allowing us to specify e.g. triangular building blocks via a `UnitTriangleGeometry`. The `AssemblySystem` constructor takes either a list of geometries or a single geometry if all building blocks are identically shaped.
 ```
 using Roly
 
