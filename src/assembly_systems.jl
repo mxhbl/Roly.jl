@@ -38,7 +38,7 @@ function AssemblySystem(interactions::AbstractMatrix, geometries::Vector{<:Abstr
     end
 
     interaction_matrix = instantiate_interactionmatrix(interactions, sites)
-    n_edges = sum(interaction_matrix) ÷ 2
+    n_edges = sum(triu(interaction_matrix))
     return AssemblySystem{D,T,F,eltype(geometries)}(interaction_matrix, monomers, geometries, n_species, n_edges, sites_sum)
 end
 function AssemblySystem(interactions::AbstractMatrix{<:Integer}, geometry::AbstractGeometry{T,F}, face_labels=nothing) where {T,F}
@@ -75,7 +75,7 @@ end
 function anatomy(asys::AssemblySystem)
     imat = interaction_matrix(asys)
     n_sites = size(imat, 1)
-    n_edges = sum(imat) ÷ 2
+    n_edges = sum(triu(imat))
 
     A = zeros(Int, n_sites + n_edges, n_sites + n_edges)
     edge_counter = 1
