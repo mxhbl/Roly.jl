@@ -43,10 +43,3 @@ To visualize 2D structures, use [RolyVis.jl](https://github.com/mxhbl/RolyVis.jl
 using RolyVis
 draw_polyforms(strs, asys, "filename.pdf//png")
 ```
-
-## Advanced Usage
-TODO: make a doc page that includes
-- Custom Geometry Definition
-- Function interface of `polyenum` / `polygen`
-- Accessing `Polyform` attributes
-- Utility tools, like cycle-free checking, unboundedness checking, extracting composition of structures
