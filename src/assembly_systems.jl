@@ -79,7 +79,7 @@ function anatomy(asys::AssemblySystem)
 
     A = zeros(Int, n_sites + n_edges, n_sites + n_edges)
     edge_counter = 1
-    for i in axes(imat, 1), j in i+1:size(imat, 2)
+    for i in axes(imat, 1), j in i:size(imat, 2)
         if imat[i, j] == 0
             continue
         end
