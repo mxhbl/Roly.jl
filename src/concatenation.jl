@@ -95,8 +95,10 @@ function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, a
 
     #TODO MAKE THIS PRETTY
     if fillhash
-        _, n = NautyGraphs._fill_hash!(p.anatomy)
+        n, _, _, hashval = NautyGraphs._nautyhash(p.anatomy)
         p.σ = n
+        # TODO: clean this up
+        p.anatomy.hashval = hashval
     else
         p.σ = 0
     end
