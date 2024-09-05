@@ -51,6 +51,44 @@ function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, a
     ψj = Δψ * p.ψs[i]
     xj = p.xs[i] + rotate(Δx, p.ψs[i])
 
+    ## Check for possible cycle
+    if spcs_j in spcs
+        cycle_candidates = findall(spcs .== spcs_j)
+        filter!(pc->p.ψs[pc]≈ψj, cycle_candidates)
+
+        for cand in cycle_candidates
+            # Check if face_j is open on the candidate
+            w = only(p.encoder.fwd[cand][face_j]) # TODO: fix for multivertex bonds
+            connected_site = p.bond_partners[w]
+            if connected_site == 0
+                # Sterics test here
+                add_edge!(p.anatomy, v, w)
+                add_edge!(p.anatomy, w, v)
+
+                # TODO: correct branching // remove duplicated code
+                if fillhash
+                    n, _, _, hashval = NautyGraphs._nautyhash(p.anatomy)
+                    p.σ = n
+                    # TODO: clean this up
+                    p.anatomy.hashval = hashval
+                else
+                    p.σ = 0
+                end
+                return true
+            else
+                blocking_particle = first(p.encoder.bwd[connected_site])
+                forbidden_sites = [i for part in p.encoder.fwd[blocking_particle] for i in part]
+                forbidden = zeros(Bool, nv(p.anatomy))
+                forbidden[forbidden_sites] .= true
+                if vertices_connected(p.anatomy, w, [v], forbidden)
+                    return false
+                else
+                    # continue to below
+                end
+            end
+        end
+    end
+
     anatomy_edges = Edge{Cint}[]
     for (i, (xi, ψi)) in enumerate(zip(p.xs, p.ψs))
         cstat, pairs = contact_status(xj - xi, ψi, ψj, geoms[spcs[i]], geom_j)

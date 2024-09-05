@@ -214,7 +214,11 @@ function polygen(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
 
             #TODO: pretty this up
             monomer_opens = open_bonds[hash(bblocks[species_j])]
-            new_opens = [b .+ (nfv, 0) for b in monomer_opens if b[1] != aj]
+            if size(next) > size(v)
+                new_opens = [b .+ (nfv, 0) for b in monomer_opens if b[1] != aj]
+            else
+                new_opens = []
+            end
             open_bonds[hashval] = filter(x -> x ∉ bonds && x[1] != ai, open_bonds_v)
             append!(open_bonds[hashval], new_opens)
 
