@@ -1,5 +1,6 @@
 using Base.Iterators
 using DataStructures
+using NautyGraphs
 
 function f!(k::Polyform{T,F}, s::Polyform{T,F}) where {T,F}
     copy!(k, s)
@@ -24,7 +25,7 @@ function adj!(u::Polyform{T,F}, v::Polyform{T,F}, j::Integer, hashes::Vector{Has
     copy!(u, v)
     success, j = grow!(u, j, assembly_system)
 
-    if success && hash(u.anatomy) ∈ hashes
+    if success && ghash(u.anatomy) ∈ hashes
         return adj!(u, v, j + 1, hashes, assembly_system)
     end
 
@@ -82,7 +83,7 @@ function polyrs(v₀::Polyform{D,T,F},
         next = u
         if success
             js[end] = j_new
-            push!(hashes[end], hash(next.anatomy))
+            push!(hashes[end], ghash(next.anatomy))
 
             f!(k, next)
 

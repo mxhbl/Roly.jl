@@ -108,5 +108,5 @@ end
 function Base.hash(asys::AssemblySystem)
     a = anatomy(asys)
     a_prime = NautyDiGraph(adjacency_matrix(a)', a.labels)
-    return hash(sort([hash(a), hash(a_prime)]))
+    return hash(sort([ghash(a), ghash(a_prime)]))
 end
