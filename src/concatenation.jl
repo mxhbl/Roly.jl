@@ -32,24 +32,75 @@ function all_open_bonds(p::Polyform, assembly_system::AssemblySystem)
     return bonds
 end
 
+
+function get_sitepos(p::Polyform, geometries, v)
+    particle, side, _ = p.encoder.bwd[v]
+    spc = species(p)[particle]
+    geom = geometries[spc]
+    return p.xs[particle] + Roly.rotate(geom.xs[side], p.ψs[particle])
+end
+
+
+function tile_check(p::Polyform, assembly_system, vert_i, vert_j)
+    geoms = geometries(assembly_system)
+    spcs = species(p)
+    x0_i = get_sitepos(p, geoms, vert_i)
+    x0_j = get_sitepos(p, geoms, vert_j)
+    xs1 = p.xs
+    xs2 = p.xs .+ Ref(x0_j - x0_i)
+    ψs1 = ψs2 = p.ψs
+
+    anatomy_edges = Edge[]
+
+    for (i, (xi, ψi)) in enumerate(zip(xs1, ψs1)), (j, (xj, ψj)) in enumerate(zip(xs2, ψs2))
+    cstat, pairs = contact_status(xj - xi, ψi, ψj, geoms[spcs[i]], geoms[spcs[j]])
+        if !cstat
+            # println("overlap")
+            return false, anatomy_edges
+        end
+        for pair in pairs
+            face_i, face_j = pair
+
+            vs_i = p.encoder.fwd[i][face_i]
+            vs_j = p.encoder.fwd[j][face_j]
+            lbl_i = p.anatomy.labels[first(vs_i)]
+            lbl_j = p.anatomy.labels[first(vs_j)]
+
+            if !interaction_matrix(assembly_system)[lbl_i, lbl_j]
+                # println("blocked bond")
+                return false, anatomy_edges
+            end
+        
+            aedges = contract_faces(convert(Vector{Cint}, vs_i), convert(Vector{Cint}, vs_j))
+            append!(anatomy_edges, aedges)
+        end
+    end
+
+    return true, anatomy_edges
+end
+
 function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, assembly_system::AssemblySystem, fillhash::Bool=false) where {D,T,F}
     n = size(p)
     nvert = nvertices(p)
     geoms = geometries(assembly_system)
+    spcs = species(p)
 
-    v, bblock_side_label = bond
-    i, face_i, _ = p.encoder.bwd[v]
+    vert_i, bblock_side_label = bond
+    part_i, face_i, _ = p.encoder.bwd[vert_i]
+    spcs_i = spcs[part_i]
+
+    p.bond_partners[vert_i] != 0 && return false
+
+
     spcs_j, face_j = irg_unflatten(bblock_side_label, assembly_system._sites_sum)
     bblock = buildingblocks(assembly_system)[spcs_j]
 
-    spcs = species(p)
-    spcs_i = spcs[i]
     geom_i = geoms[spcs_i]
     geom_j = geoms[spcs_j]
 
     Δx, Δψ = attachment_offset(T(face_i), T(face_j), geom_i, geom_j)
-    ψj = Δψ * p.ψs[i]
-    xj = p.xs[i] + rotate(Δx, p.ψs[i])
+    ψj = Δψ * p.ψs[part_i]
+    xj = p.xs[part_i] + rotate(Δx, p.ψs[part_i])
 
     ## Check for possible cycle
     if spcs_j in spcs
@@ -58,12 +109,25 @@ function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, a
 
         for cand in cycle_candidates
             # Check if face_j is open on the candidate
-            w = only(p.encoder.fwd[cand][face_j]) # TODO: fix for multivertex bonds
-            connected_site = p.bond_partners[w]
-            if connected_site == 0
-                # Sterics test here
-                add_edge!(p.anatomy, v, w)
-                add_edge!(p.anatomy, w, v)
+            vert_cycle = only(p.encoder.fwd[cand][face_j]) # TODO: fix for multivertex bonds
+            connected_site = p.bond_partners[vert_cycle]
+            if connected_site == 0  # w is open
+                tiles, aedges = tile_check(p, assembly_system, vert_i, vert_cycle)
+                println(aedges)
+                println(vert_i, " ", vert_cycle)
+                println("---")
+                !tiles && return false
+                for ae in aedges
+                    p.bond_partners[ae.src] != 0 && error("bond duplication, $(ae.src): $(p.bond_partners[ae.src])")
+                    p.bond_partners[ae.dst] != 0 && error("bond duplication, $(ae.dst): $(p.bond_partners[ae.dst])")
+
+                    add_edge!(p.anatomy, ae)
+                    add_edge!(p.anatomy, reverse(ae))
+
+                    vi, vj = ae.src, ae.dst
+                    p.bond_partners[vi] = vj
+                    p.bond_partners[vj] = vi
+                end
 
                 # TODO: correct branching // remove duplicated code
                 if fillhash
@@ -77,10 +141,10 @@ function attach_monomer!(p::Polyform{D,T,F}, bond::Tuple{<:Integer,<:Integer}, a
                 return true
             else
                 blocking_particle = first(p.encoder.bwd[connected_site])
-                forbidden_sites = [i for part in p.encoder.fwd[blocking_particle] for i in part]
+                verts_bp = [i for part in p.encoder.fwd[blocking_particle] for i in part]
                 forbidden = zeros(Bool, nv(p.anatomy))
-                forbidden[forbidden_sites] .= true
-                if vertices_connected(p.anatomy, w, [v], forbidden)
+                forbidden[verts_bp] .= true
+                if vertices_connected(p.anatomy, vert_cycle, [vert_i], forbidden)
                     return false
                 else
                     # continue to below
