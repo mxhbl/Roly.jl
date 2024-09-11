@@ -1,40 +1,23 @@
-function open_bond(p::Polyform, j::Integer, assembly_system::AssemblySystem)
+function open_bond(p::Polyform, assembly_system::AssemblySystem, j::Integer)
     for v in 1:length(p.bond_partners)
-        if p.bond_partners[v] > 0
+        p.bond_partners[v] != 0 && continue
+
+        label = vertex2label(p, assembly_system, v)
+        
+        partner_label, Δj = @views find_nth(!iszero, assembly_system.intmat[:, label], j)
+        j -= Δj
+        if isnothing(partner_label)
             continue
-        end
-        #TODO :FIX THIS INTERFACE AND DECIDE WHAT LABEL SHOULD DO
-        spcs = species(p)[p.encoder.bwd[v][1]]
-        site = p.encoder.bwd[v][2]
-        lbl = spcssite_to_label(spcs, site, assembly_system)
-        for (k, fk) in enumerate(@view assembly_system.intmat[:, lbl])
-            if fk > 0
-                j -= 1
-            end
-            if j == 0
-                return (v, k)
-            end
+        else
+            return v, partner_label
         end
     end
 
-    return nothing
+    return nothing, nothing
 end
-
-function all_open_bonds(p::Polyform, assembly_system::AssemblySystem)
-    bonds = Tuple{Int,Int}[]
-    j = 1
-    b = open_bond(p, j, assembly_system)
-    while !isnothing(b)
-        push!(bonds, b)
-        j += 1
-        b = open_bond(p, j, assembly_system)
-    end
-    return bonds
-end
-
 
 function get_sitepos(p::Polyform, geometries, v)
-    particle, side, _ = p.encoder.bwd[v]
+    particle, side = vertex2particle(p, v)
     spc = species(p)[particle]
     geom = geometries[spc]
     return p.xs[particle] + Roly.rotate(geom.xs[side], p.ψs[particle])
@@ -79,7 +62,7 @@ function tile_check(p::Polyform, assembly_system, vert_i, vert_j)
     return true, anatomy_edges
 end
 
-function attach_monomer!(p::Polyform{D,T,F}, v::Integer, blabel::Integer, assembly_system::AssemblySystem, fillhash::Bool=false) where {D,T,F}
+function attach_monomer!(p::Polyform{D,T,F}, v::Integer, partner_label::Integer, assembly_system::AssemblySystem, fillhash::Bool=false) where {D,T,F}
     # v:: vertex of polyform p
     # blabel:: site label of building block tb attached
     p.bond_partners[v] != 0 && return false
@@ -92,7 +75,7 @@ function attach_monomer!(p::Polyform{D,T,F}, v::Integer, blabel::Integer, assemb
     part_i, site_i = vertex2particle(p, v)
     spcs_i = spcs[part_i]
 
-    spcs_j, site_j = label_to_spcssite(blabel, assembly_system)
+    spcs_j, site_j = label2spcssite(partner_label, assembly_system)
     bblock = buildingblocks(assembly_system)[spcs_j]
 
     geom_i = geoms[spcs_i]
@@ -128,7 +111,7 @@ function attach_monomer!(p::Polyform{D,T,F}, v::Integer, blabel::Integer, assemb
     push!(p.ψs, ψj)
     push!(p.species, spcs_j)
     p.encoder = concatenate(p.encoder, bblock.encoder)
-    append!(p.bond_partners, zeros(T, nvertices(bblock))) #TODO: make n_faces a higher level interface
+    append!(p.bond_partners, zeros(T, nvertices(bblock)))
 
     NautyGraphs.blockdiag!(p.anatomy, bblock.anatomy)
     for edge in new_edges
@@ -140,7 +123,6 @@ function attach_monomer!(p::Polyform{D,T,F}, v::Integer, blabel::Integer, assemb
         p.bond_partners[vj] = vi
     end
 
-    #TODO MAKE THIS PRETTY
     if fillhash
         n, _, _, hashval = NautyGraphs._nautyhash(p.anatomy)
         p.σ = n
@@ -155,6 +137,7 @@ end
 function bond_to_edge!(edges::AbstractVector{<:Edge}, vs_i::AbstractVector{<:Integer}, vs_j::AbstractVector{<:Integer})
     ni, nj = length(vs_i), length(vs_j)
     shared_symmetry = max(ni, nj) // min(ni, nj)
+
     if (ni == nj == 1) || !isinteger(shared_symmetry)
         edge = eltype(edges)(first(vs_i), first(vs_j))
         push!(edges, edge)
@@ -175,15 +158,14 @@ function bond_to_edge!(edges::AbstractVector{<:Edge}, vs_i::AbstractVector{<:Int
 end
 
 function grow!(p::Polyform{D,T,F}, k::Integer, assembly_system::AssemblySystem) where {D,T,F}
-    bond = open_bond(p, k, assembly_system)
-    if isnothing(bond)
+    v, partner_label = open_bond(p, assembly_system, k)
+
+    if isnothing(v)
         return false, k
     end
 
-    success = attach_monomer!(p, bond[1], bond[2], assembly_system)
-    if !success
-        return grow!(p, k+1, assembly_system)
-    end
+    success = attach_monomer!(p, v, partner_label, assembly_system)
+    !success && return grow!(p, k+1, assembly_system)
 
     canonize!(p)
     return true, k

@@ -47,10 +47,10 @@ function AssemblySystem(interactions::AbstractMatrix{<:Integer}, geometry::Abstr
     return AssemblySystem(interactions, geometries, face_labels)
 end
 
-function spcssite_to_label(spcs::Integer, site::Integer, assembly_system::AssemblySystem)
+function spcssite2label(spcs::Integer, site::Integer, assembly_system::AssemblySystem)
     return irg_flatten(spcs, site, assembly_system._sites_sum)
 end
-function label_to_spcssite(label::Integer, assembly_system::AssemblySystem)
+function label2spcssite(label::Integer, assembly_system::AssemblySystem)
     return irg_unflatten(label, assembly_system._sites_sum)
 end
 

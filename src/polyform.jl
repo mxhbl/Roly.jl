@@ -128,3 +128,8 @@ end
 function vertex2particle(p::Polyform, vertex::Integer)
     return @view p.encoder.bwd[vertex][1:2]
 end
+function vertex2label(p::Polyform, assembly_system, vertex::Integer)
+    particle, site = vertex2particle(p, vertex)
+    spcs = species(p)[particle]
+    return spcssite2label(spcs, site, assembly_system)
+end

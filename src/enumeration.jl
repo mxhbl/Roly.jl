@@ -152,14 +152,14 @@ function polyrs(v₀::Polyform{D,T,F},
 end
 
 function polyenum(assembly_system::AssemblySystem{D,T,F,G};
-                  max_size::Number=Inf, max_strs::Number=Inf,
+                  max_size::Integer=nothing, max_strs::Integer=nothing,
                   reducer::FnorNothing=nothing,
                   reduce_op::FnorNothing=Base.:+,
                   aggregator::FnorNothing=nothing,
                   rejector::FnorNothing=nothing) where {D,T,F,G}
     v₀ = Polyform{D,T,F}()
-    max_size = isinf(max_size) ? 0 : convert(Int, max_size)
-    max_strs = isinf(max_strs) ? 0 : convert(Int, max_strs)
+    max_size = isnothing(max_size) ? 0 : convert(Int, max_size)
+    max_strs = isnothing(max_strs) ? 0 : convert(Int, max_strs)
 
     out_base, out_vals = polyrs(v₀, assembly_system, reducer, reduce_op, aggregator, rejector, max_size, max_strs)
     if isnothing(reducer) && isnothing(aggregator) && isnothing(rejector)
@@ -174,17 +174,14 @@ function polygen(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
                       max_size=Inf, max_strs=Inf) where {D,T,F,G}
     bblocks = buildingblocks(assembly_system)
 
-    values = [callback(monomer) for monomer in bblocks]
+    values = [callback(bblock) for bblock in bblocks]
     hashes = Set{HashType}()
     queue = Queue{Polyform{D,T,F}}()
-    open_bonds = Dict{HashType,Vector{Tuple{Int,Int}}}()
 
-    for monomer in bblocks
-        hashval = hash(monomer)
-
-        enqueue!(queue, monomer)
+    for bblock in bblocks
+        hashval = hash(bblock)
+        enqueue!(queue, bblock)
         push!(hashes, hashval)
-        open_bonds[hashval] = all_open_bonds(monomer, assembly_system)
     end
 
     u = Polyform{D,T,F}()
@@ -193,42 +190,30 @@ function polygen(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
     while !isempty(queue) && n_strs < max_strs
         v = dequeue!(queue)
         n = size(v)
-        nfv = nvertices(v)
         if n >= max_size
             continue
         end
 
-        open_bonds_v = open_bonds[hash(v)]
-        bonds = []
-        for bond in open_bonds_v
-            ai, j = bond
+        j = 1
+        vert, partner_label = open_bond(v, assembly_system, j)
+        while !isnothing(vert)
             copy!(u, v)
 
-            success = attach_monomer!(u, bond[1], bond[2], assembly_system, true)
-            if !success || (hash(u) ∈ hashes)
-                continue
+            success = attach_monomer!(u, vert, partner_label, assembly_system, true)
+            hashval = hash(u)
+
+            if success && (hashval ∉ hashes)
+                next = copy(u)
+            
+                push!(values, callback(next))
+                push!(hashes, hashval)
+                enqueue!(queue, next)
+                n_strs += 1
+                n_strs == max_strs && break
             end
 
-            next = copy(u)
-            species_j, aj =  irg_unflatten(j, assembly_system._sites_sum)
-            hashval = hash(next)
-
-            #TODO: pretty this up
-            monomer_opens = open_bonds[hash(bblocks[species_j])]
-            if size(next) > size(v)
-                new_opens = [b .+ (nfv, 0) for b in monomer_opens if b[1] != aj]
-            else
-                new_opens = []
-            end
-            open_bonds[hashval] = filter(x -> x ∉ bonds && x[1] != ai, open_bonds_v)
-            append!(open_bonds[hashval], new_opens)
-
-            push!(values, callback(next))
-            push!(hashes, hashval)
-            push!(bonds, bond)
-            enqueue!(queue, next)
-            n_strs += 1
-            n_strs == max_strs && break
+            j += 1
+            vert, partner_label = open_bond(v, assembly_system, j)
         end
     end
 

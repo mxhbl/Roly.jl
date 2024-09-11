@@ -176,3 +176,15 @@ function irg_unflatten(i::Integer, intervals::AbstractVector{<:Integer})
         return (a, b)
     end
 end
+
+function find_nth(f::Function, A, n)
+    # Return the index of the nth true value of f.(A), as well as how many matches were found
+    # TODO this is a weird function, make it better
+    j = 0
+    for (k, a) in enumerate(A)
+        if f(a) j += 1 end
+        j == n && return k, j
+    end
+    return nothing, j
+end
+find_nth(A, n) = find_nth(identity, A, n)
