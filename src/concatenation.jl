@@ -1,9 +1,8 @@
+
 function open_bond(p::Polyform, assembly_system::AssemblySystem, j::Integer)
     for v in 1:length(p.bond_partners)
         p.bond_partners[v] != 0 && continue
-
         label = vertex2label(p, assembly_system, v)
-        
         partner_label, Δj = @views find_nth(!iszero, assembly_system.intmat[:, label], j)
         j -= Δj
         if isnothing(partner_label)
@@ -20,7 +19,7 @@ function get_sitepos(p::Polyform, geometries, v)
     particle, side = vertex2particle(p, v)
     spc = species(p)[particle]
     geom = geometries[spc]
-    return p.xs[particle] + Roly.rotate(geom.xs[side], p.ψs[particle])
+    return p.xs[particle] + rotate(geom.xs[side], p.ψs[particle])
 end
 
 
@@ -63,8 +62,6 @@ function tile_check(p::Polyform, assembly_system, vert_i, vert_j)
 end
 
 function attach_monomer!(p::Polyform{D,T,F}, v::Integer, partner_label::Integer, assembly_system::AssemblySystem, fillhash::Bool=false) where {D,T,F}
-    # v:: vertex of polyform p
-    # blabel:: site label of building block tb attached
     p.bond_partners[v] != 0 && return false
 
     n = size(p)
@@ -95,8 +92,8 @@ function attach_monomer!(p::Polyform{D,T,F}, v::Integer, partner_label::Integer,
         for sites in bound_sites
             si, sj = sites
 
-            vs_i = particle2vertices(p, i, si)
-            vs_j = particle2vertices(bblock, 1, sj)
+            vs_i = particle2multivertex(p, i, si)
+            vs_j = particle2multivertex(bblock, 1, sj)
             label_i = p.anatomy.labels[first(vs_i)]
             label_j = bblock.anatomy.labels[first(vs_j)]
 
@@ -175,26 +172,25 @@ end
 function shrink!(p::Polyform)
     n = size(p)
     n == 0 && return false
+    nv = nvertices(p)
 
-    # TODO: optimize
     k = 0
     if n > 1
         while true
-            idx = p.encoder.bwd[end-k][1]
-            idxs = [i for part in p.encoder.fwd[idx] for i in part]
-            if !are_bridge(p.anatomy, idxs)
-                break
-            end
+            part, _ = vertex2particle(p, nv-k)
+            vertices = particle2multivertex(p, part)
+            !are_bridge(p.anatomy, vertices) && break
             k += 1
         end
     end
 
-    idx = p.encoder.bwd[end-k][1]
-    del_vs = sort([i for part in p.encoder.fwd[idx] for i in part])
+    del_part, _ = vertex2particle(p, nv-k)
+    del_vs = particle2multivertex(p, del_part)
+    sort!(del_vs)
 
-    deleteat!(p.xs, idx)
-    deleteat!(p.ψs, idx)
-    deleteat!(p.species, idx)
+    deleteat!(p.xs, del_part)
+    deleteat!(p.ψs, del_part)
+    deleteat!(p.species, del_part)
 
     # open up bonds that are now free
     partners = p.bond_partners[del_vs]
@@ -205,11 +201,12 @@ function shrink!(p::Polyform)
         p.bond_partners[part] = 0
     end
     deleteat!(p.bond_partners, del_vs)
+
     vertex_shift(v) = sum(x -> x <= v, del_vs)
     @views p.bond_partners .-= vertex_shift.(p.bond_partners)
 
     rem_vertices!(p.anatomy, del_vs)
-    deleteat!(p.encoder, idx)
+    deleteat!(p.encoder, del_part)
 
     canonize!(p)
     return true

@@ -122,8 +122,11 @@ end
 function particle2vertex(p::Polyform, particle::Integer)
     return [first(idxs) for idxs in p.encoder.fwd[particle]]
 end
-function particle2vertices(p::Polyform, particle::Integer, site::Integer)
+function particle2multivertex(p::Polyform, particle::Integer, site::Integer)
     return p.encoder.fwd[particle][site]
+end
+function particle2multivertex(p::Polyform, particle::Integer)
+    return [i for idxs in p.encoder.fwd[particle] for i in idxs]
 end
 function vertex2particle(p::Polyform, vertex::Integer)
     return @view p.encoder.bwd[vertex][1:2]
