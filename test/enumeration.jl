@@ -26,17 +26,17 @@
          4 2 1 1],
         UnitTriangleGeometry)
 
-    nstrs_16_enum = polyenum(I16, max_size=Inf)[1]
-    nstrs_137_enum = polyenum(I137, max_size=Inf)[1]
-    nstrs_cyc_enum = polyenum(Icyc, max_size=Inf)[1]
+    nstrs_16_enum = polyenum(I16)[1]
+    nstrs_137_enum = polyenum(I137)[1]
+    nstrs_cyc_enum = polyenum(Icyc)[1]
 
     @test nstrs_16_enum == 16
     @test nstrs_137_enum == 137
     @test nstrs_cyc_enum == 283
 
-    nstrs_16_gen = polygen(I16, max_size=Inf) |> length
-    nstrs_137_gen = polygen(I137, max_size=Inf) |> length
-    nstrs_cyc_gen = polygen(Icyc, max_size=Inf) |> length
+    nstrs_16_gen = polygen(I16) |> length
+    nstrs_137_gen = polygen(I137) |> length
+    nstrs_cyc_gen = polygen(Icyc) |> length
 
     @test nstrs_16_gen == 16
     @test nstrs_137_gen == 137

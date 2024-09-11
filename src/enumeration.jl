@@ -152,14 +152,14 @@ function polyrs(v₀::Polyform{D,T,F},
 end
 
 function polyenum(assembly_system::AssemblySystem{D,T,F,G};
-                  max_size::Integer=nothing, max_strs::Integer=nothing,
+                  max_size=nothing, max_strs=nothing,
                   reducer::FnorNothing=nothing,
                   reduce_op::FnorNothing=Base.:+,
                   aggregator::FnorNothing=nothing,
                   rejector::FnorNothing=nothing) where {D,T,F,G}
     v₀ = Polyform{D,T,F}()
-    max_size = isnothing(max_size) ? 0 : convert(Int, max_size)
-    max_strs = isnothing(max_strs) ? 0 : convert(Int, max_strs)
+    max_size = isnothing(max_size) ? 0 : max_size
+    max_strs = isnothing(max_strs) ? 0 : max_strs
 
     out_base, out_vals = polyrs(v₀, assembly_system, reducer, reduce_op, aggregator, rejector, max_size, max_strs)
     if isnothing(reducer) && isnothing(aggregator) && isnothing(rejector)
@@ -196,7 +196,7 @@ function polygen(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
 
         j = 1
         vert, partner_label = open_bond(v, assembly_system, j)
-        while !isnothing(vert)
+        while !iszero(vert)
             copy!(u, v)
 
             success = attach_monomer!(u, vert, partner_label, assembly_system, true)

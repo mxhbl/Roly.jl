@@ -13,7 +13,7 @@ function open_bond(p::Polyform, assembly_system::AssemblySystem, j::Integer)
         end
     end
 
-    return nothing, nothing
+    return 0, 0
 end
 
 function get_sitepos(p::Polyform, geometries, v)
@@ -160,7 +160,7 @@ end
 function grow!(p::Polyform{D,T,F}, k::Integer, assembly_system::AssemblySystem) where {D,T,F}
     v, partner_label = open_bond(p, assembly_system, k)
 
-    if isnothing(v)
+    if iszero(v)
         return false, k
     end
 
