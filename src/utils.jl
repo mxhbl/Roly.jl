@@ -100,7 +100,6 @@ function Base.copy!(dest::PolyEncoder{T}, src::PolyEncoder{T}) where {T}
     return dest
 end
 
-
 function are_bridge(g::AbstractNautyGraph, vs::AbstractVector{<:Integer})
     neighs = zeros(Bool, nv(g))
     buffer = zeros(Int, nv(g))

@@ -106,11 +106,11 @@ const UnitCubeGeometry = PolyhedronGeometry{DefInt}(:cube, DefFloat(1.))
 dimension(::PolygonGeometry) = 2
 dimension(::PolyhedronGeometry) = 3
 
-function attachment_offset(face_i::Integer, face_j::Integer,
+function attachment_offset(site_i::Integer, site_j::Integer,
                            geom_i::AbstractGeometry,
                            geom_j::AbstractGeometry)
-    x_i, Δθ = geom_i.xs[face_i], geom_i.Δθs[face_i]
-    x_j, θ_ref = geom_j.xs[face_j], geom_j.θs_ref[face_j]
+    x_i, Δθ = geom_i.xs[site_i], geom_i.Δθs[site_i]
+    x_j, θ_ref = geom_j.xs[site_j], geom_j.θs_ref[site_j]
 
     Δψ = Δθ * θ_ref
     Δx = x_i - rotate(x_j, Δψ)

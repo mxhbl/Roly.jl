@@ -12,8 +12,8 @@ function adj!(u::Polyform{T,F}, v::Polyform{T,F}, j::Integer, hashes::Vector{Has
               assembly_system::AssemblySystem) where {T,F}
     ### TODO: We should exploit that canonical labels are guaranteed (see Nauty User Guide p.4) to be in order of color
     ### So, if we know the color of the particle that would be removed, we can filter the possible offspring
-    bblocks = buildingblocks(assembly_system)
     if size(v) == 0
+        bblocks = buildingblocks(assembly_system)
         if j > length(bblocks)
             return false, j + 1
         end
@@ -204,7 +204,7 @@ function polygen(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
             ai, j = bond
             copy!(u, v)
 
-            success = attach_monomer!(u, bond, assembly_system, true)
+            success = attach_monomer!(u, bond[1], bond[2], assembly_system, true)
             if !success || (hash(u) ∈ hashes)
                 continue
             end
