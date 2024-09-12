@@ -1,6 +1,6 @@
 
 function open_bond(p::Polyform, assembly_system::AssemblySystem, j::Integer)
-    for v in 1:length(p.bond_partners)
+    for v in 1:nvertices(p)
         p.bond_partners[v] != 0 && continue
         label = vertex2label(p, assembly_system, v)
         partner_label, Δj = @views find_nth(!iszero, assembly_system.intmat[:, label], j)
@@ -64,49 +64,17 @@ end
 function attach_monomer!(p::Polyform{D,T,F}, v::Integer, partner_label::Integer, assembly_system::AssemblySystem, fillhash::Bool=false) where {D,T,F}
     p.bond_partners[v] != 0 && return false
 
-    n = size(p)
-    nvert = nvertices(p)
-    geoms = geometries(assembly_system)
-    spcs = species(p)
+    spcs2, site2 = label2spcssite(partner_label, assembly_system)
+    bblock = buildingblocks(assembly_system)[spcs2]
+    v2 = particle2vertex(bblock, 1, site2)
 
-    part_i, site_i = vertex2particle(p, v)
-    spcs_i = spcs[part_i]
+    xs2, ψs2 = get_attached_coordinates(p, bblock, assembly_system, v, v2)
+    success, new_edges = find_bonds(p, bblock, assembly_system, xs2, ψs2)
+    !success && return false
 
-    spcs_j, site_j = label2spcssite(partner_label, assembly_system)
-    bblock = buildingblocks(assembly_system)[spcs_j]
-
-    geom_i = geoms[spcs_i]
-    geom_j = geoms[spcs_j]
-
-    Δx, Δψ = attachment_offset(site_i, site_j, geom_i, geom_j)
-    ψj = Δψ * p.ψs[part_i]
-    xj = p.xs[part_i] + rotate(Δx, p.ψs[part_i])
-
-    new_edges = Edge{Cint}[]
-    imat = interaction_matrix(assembly_system)
-    for (i, (xi, ψi)) in enumerate(zip(p.xs, p.ψs))
-        cstat, bound_sites = contact_status(xj - xi, ψi, ψj, geoms[spcs[i]], geom_j)
-        # Return if particles overlap
-        !cstat && return false
-
-        for sites in bound_sites
-            si, sj = sites
-
-            vs_i = particle2multivertex(p, i, si)
-            vs_j = particle2multivertex(bblock, 1, sj)
-            label_i = p.anatomy.labels[first(vs_i)]
-            label_j = bblock.anatomy.labels[first(vs_j)]
-
-            # Return if a disallowed bond forms
-            !imat[label_i, label_j] && return false
-
-            bond_to_edge!(new_edges, vs_i, vs_j .+ nvert)
-        end
-    end
-
-    push!(p.xs, xj)
-    push!(p.ψs, ψj)
-    push!(p.species, spcs_j)
+    append!(p.xs, xs2)
+    append!(p.ψs, ψs2)
+    append!(p.species, species(bblock))
     p.encoder = concatenate(p.encoder, bblock.encoder)
     append!(p.bond_partners, zeros(T, nvertices(bblock)))
 
@@ -131,6 +99,55 @@ function attach_monomer!(p::Polyform{D,T,F}, v::Integer, partner_label::Integer,
     return true
 end
 
+function get_attached_coordinates(p1::Polyform, p2::Polyform, assembly_system::AssemblySystem, v1, v2)
+    geoms = geometries(assembly_system)
+    spcs1 = species(p1)
+    spcs2 = species(p2)
+
+    part1, site1 = vertex2particle(p1, v1)
+    part2, site2 = vertex2particle(p2, v2)
+
+    Δx, Δψ = attachment_offset(site1, site2, geoms[spcs1[part1]], geoms[spcs2[part2]])
+    Δx = p1.xs[part1] + rotate(Δx, p1.ψs[part1])
+    Δψ = Δψ * p1.ψs[part1]
+
+    xs2, ψs2 = copy(p2.xs), copy(p2.ψs)
+    grab!(xs2, ψs2, part2, Δx, Δψ)
+    return xs2, ψs2
+end
+
+function find_bonds(p1::Polyform, p2::Polyform, assembly_system::AssemblySystem, xs2, ψs2)
+    geoms = geometries(assembly_system)
+    intmat = interaction_matrix(assembly_system)
+    spcs1 = species(p1)
+    spcs2 = species(p2)
+    
+    nv1 = nvertices(p1)
+    xs1, ψs1 = p1.xs, p1.ψs
+
+    new_edges = Edge{Cint}[]
+    for (i, (xi, ψi)) in enumerate(zip(xs1, ψs1)), (j, (xj, ψj)) in enumerate(zip(xs2, ψs2))
+        cstat, bound_sites = contact_status(xj - xi, ψi, ψj, geoms[spcs1[i]], geoms[spcs2[j]])
+        # Return if particles overlap
+        !cstat && return false, new_edges
+
+        for sites in bound_sites
+            si, sj = sites
+
+            vs_i = particle2multivertex(p1, i, si)
+            vs_j = particle2multivertex(p2, j, sj)
+            label_i = p1.anatomy.labels[first(vs_i)]
+            label_j = p2.anatomy.labels[first(vs_j)]
+
+            # Return if a disallowed bond forms
+            !intmat[label_i, label_j] && return false, new_edges
+
+            bond_to_edge!(new_edges, vs_i, vs_j .+ nv1)
+        end
+    end
+    return true, new_edges
+end
+
 function bond_to_edge!(edges::AbstractVector{<:Edge}, vs_i::AbstractVector{<:Integer}, vs_j::AbstractVector{<:Integer})
     ni, nj = length(vs_i), length(vs_j)
     shared_symmetry = max(ni, nj) // min(ni, nj)
@@ -141,12 +158,8 @@ function bond_to_edge!(edges::AbstractVector{<:Edge}, vs_i::AbstractVector{<:Int
         return
     end
    
-    if ni <= nj
-        vs1, vs2 = vs_i, vs_j
-    else
-        vs1, vs2 = vs_j, vs_i
-    end
-    
+    vs1, vs2 = ni <= nj ? (vs_i, vs_j) : (vs_j, vs_i)
+
     for (v1, v2) in zip(vs1, reverse(vs2[1:numerator(shared_symmetry):end]))
         edge = eltype(edges)(v1, v2)
         push!(edges, edge)
@@ -154,7 +167,7 @@ function bond_to_edge!(edges::AbstractVector{<:Edge}, vs_i::AbstractVector{<:Int
     return 
 end
 
-function grow!(p::Polyform{D,T,F}, k::Integer, assembly_system::AssemblySystem) where {D,T,F}
+function raise!(p::Polyform{D,T,F}, k::Integer, assembly_system::AssemblySystem) where {D,T,F}
     v, partner_label = open_bond(p, assembly_system, k)
 
     if iszero(v)
@@ -162,29 +175,28 @@ function grow!(p::Polyform{D,T,F}, k::Integer, assembly_system::AssemblySystem) 
     end
 
     success = attach_monomer!(p, v, partner_label, assembly_system)
-    !success && return grow!(p, k+1, assembly_system)
+    !success && return raise!(p, k+1, assembly_system)
 
     canonize!(p)
     return true, k
 end
     
 
-function shrink!(p::Polyform)
+function lower!(p::Polyform)
     n = size(p)
     n == 0 && return false
-    nv = nvertices(p)
 
-    k = 0
+    k = 1
     if n > 1
         while true
-            part, _ = vertex2particle(p, nv-k)
+            part, _ = vertex2particle(p, k)
             vertices = particle2multivertex(p, part)
             !are_bridge(p.anatomy, vertices) && break
             k += 1
         end
     end
 
-    del_part, _ = vertex2particle(p, nv-k)
+    del_part, _ = vertex2particle(p, k)
     del_vs = particle2multivertex(p, del_part)
     sort!(del_vs)
 

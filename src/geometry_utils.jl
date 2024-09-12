@@ -68,24 +68,28 @@ function rotate!(xs::AbstractVector{<:Point{3,F}}, ϕ::Quaternion{F}) where {F}
         xs[i] = rotate(xs[i], ϕ)
     end
 end
+function rotate!(ψs::AbstractVector{<:RotationOperator{F}}, ϕ::RotationOperator{F}) where {F}
+    ψs .= Ref(ϕ) .* ψs
+    return
+end
 
 function shift!(xs::AbstractVector{<:Point}, Δx::Point)
-    for i in eachindex(xs)
-        @views xs[i] .+= Δx
-    end
+    xs .+= Ref(Δx)
     return
 end
 
-function grab_at!(xs::AbstractVector{<:Point}, ψs::AbstractVector{<:RotationOperator}, i::Integer)
+function grab!(xs::AbstractVector{<:Point}, ψs::AbstractVector{<:RotationOperator}, i::Integer, Δx=nothing, Δψ=nothing)
     # Shifts and rotates a list of xs and ψs such that particle i is at the origin in reference orientation
-    Δx = -xs[i]
-    ϕ = inv(ψs[i])
+    Δψ = isnothing(Δψ) ? inv(ψs[i]) : Δψ * inv(ψs[i])
 
-    shift!(xs, Δx)
-    rotate!(xs, ϕ)
-    ψs .= ϕ .* ψs
+    shift!(xs, -xs[i])
+    rotate!(xs, Δψ)
+    rotate!(ψs, Δψ)
+
+    !isnothing(Δx) && shift!(xs, Δx)
     return
 end
+
 
 function cart2pol(x::F, y::Real) where {F}
     y = convert(F, y)

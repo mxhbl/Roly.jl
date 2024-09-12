@@ -23,6 +23,7 @@ mutable struct Polyform{D,T<:Integer,F<:AbstractFloat,R<:RotationOperator{F}}
 end
 function Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs) where {D,T,F}
     p = Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs, 0)
+    
     canonize!(p)
     return p
 end 
@@ -60,7 +61,7 @@ Base.show(io::Core.IO, ::Type{Polyform{D,T,F}}) where {D,T,F} = print(io, "Polyf
 function canonize!(p::Polyform)
     canon_perm, n = NautyGraphs.canonize!(p.anatomy)
     permute!(p.encoder, canon_perm)
-    p.bond_partners .= p.bond_partners[canon_perm]
+    permute!(p.bond_partners, canon_perm)
 
     inv_perm = invperm(canon_perm)
     for (i, v) in enumerate(p.bond_partners)
@@ -114,8 +115,6 @@ function create_monomer(geometry::AbstractGeometry{T,F},
                     xs, ψs)
 end
 
-# ALL OF THESE IGNORE MULTI-EDGES
-# TODO: IMPLEMENT MULTIEDGES
 function particle2vertex(p::Polyform, particle::Integer, site::Integer)
     return first(p.encoder.fwd[particle][site])
 end

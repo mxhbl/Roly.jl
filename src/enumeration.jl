@@ -4,7 +4,7 @@ using NautyGraphs
 
 function f!(k::Polyform{T,F}, s::Polyform{T,F}) where {T,F}
     copy!(k, s)
-    shrink!(k)
+    lower!(k)
     return k
 end
 
@@ -23,7 +23,7 @@ function adj!(u::Polyform{T,F}, v::Polyform{T,F}, j::Integer, hashes::Vector{Has
     end
 
     copy!(u, v)
-    success, j = grow!(u, j, assembly_system)
+    success, j = raise!(u, j, assembly_system)
 
     if success && ghash(u.anatomy) ∈ hashes
         return adj!(u, v, j + 1, hashes, assembly_system)
