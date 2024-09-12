@@ -169,10 +169,7 @@ end
 
 function raise!(p::Polyform{D,T,F}, k::Integer, assembly_system::AssemblySystem) where {D,T,F}
     v, partner_label = open_bond(p, assembly_system, k)
-
-    if iszero(v)
-        return false, k
-    end
+    iszero(v) && return false, k
 
     success = attach_monomer!(p, v, partner_label, assembly_system)
     !success && return raise!(p, k+1, assembly_system)
