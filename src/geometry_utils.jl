@@ -26,8 +26,9 @@ Quaternion(w::F, x::F, y::F, z::F) where {F<:Real} = Quaternion{F}(w, x, y, z)
 Quaternion(w::Real, x::Real, y::Real, z::Real) = Quaternion(promote(w, x, y, z)...)
 Base.convert(::Type{Quaternion{F}}, v::AbstractVector) where {F} = Quaternion{F}(v[1:4]...)
 Base.convert(::Type{Quaternion{F}}, q::Quaternion) where {F} = Quaternion{F}(q.w, q.x, q.y, q.z)
-# Base.:(==)(a::Quaternion, b::Quaternion) = ...
-# Base.isapprox(a::Quaternion, b::Quaternion) = ...
+# TODO: take symmetry into account
+Base.:(==)(a::Quaternion, b::Quaternion) = a.w == b.w && a.x == b.x && a.y == b.y && a.z == b.z
+Base.isapprox(a::Quaternion, b::Quaternion; kwargs...) = isapprox(a.w, b.w; kwargs...) && isapprox(a.x, b.x; kwargs...) && isapprox(a.y, b.y; kwargs...) && isapprox(a.z, b.z; kwargs...)
 Base.inv(q::Quaternion) = Quaternion(q.w, -q.x, -q.y, -q.z)
 LinearAlgebra.norm(q::Quaternion) = sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z)
 
