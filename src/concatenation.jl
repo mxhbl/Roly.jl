@@ -25,6 +25,9 @@ end
 
 function attach_monomer!(p::Polyform{D,T,F}, v::Integer, partner_label::Integer, assembly_system::AssemblySystem, fillhash::Bool=false, check_cycles=false) where {D,T,F}
     p.bond_partners[v] != 0 && return false
+    # if iscyclic(p) && return false # don't allow offspring from cyclic strs
+    # BUT: 2d cyclic strs can only be made from already cyclics
+    # this test should be performed later, and reject only strs that do not have more cyclic bonds than before
 
     spcs2, site2 = label2spcssite(partner_label, assembly_system)
     bblock = buildingblocks(assembly_system)[spcs2]
@@ -37,34 +40,46 @@ function attach_monomer!(p::Polyform{D,T,F}, v::Integer, partner_label::Integer,
     !success && return false
 
     istiling = false
-    tile_edges = eltype(new_edges)[]
-    for dup in duplicate_species
-        vdup = particle2vertex(p, dup, site2)
+    if check_cycles
+        tile_edges = eltype(new_edges)[]
+        for dup in duplicate_species
+            # we might get away with rejecting if there is more than
+            # one possible cycle, as 
+            vdup = particle2vertex(p, dup, site2)
 
-        vpartner = p.bond_partners[vdup]
-        xs_tile, ψs_tile = get_attached_coordinates(p, p, assembly_system, v, vdup)
-        if vpartner == 0  # vdup is open
-            # Test whether tiling is sterically possible
-            istiling, tile_edges = find_bonds(p, p, assembly_system, xs_tile, ψs_tile)
-            # istiling && error("tiling not working yet")
-            istiling && break
-        else
-            # Test whether tiling would be sterically possible if blocking particle was not there
-            blocking_particle, _ = vertex2particle(p, vpartner)
-            could_tile, _ = find_bonds(p, p, assembly_system, xs_tile, ψs_tile, [blocking_particle], [blocking_particle])
-            !could_tile && continue
-
-            blocking_vertices = particle2multivertex(p, blocking_particle)
-            forbidden = zeros(Bool, nv(p.anatomy))
-            forbidden[blocking_vertices] .= true
-            if vertices_connected(p.anatomy, vdup, [v], forbidden)
-                return false
+            vpartner = p.bond_partners[vdup]
+            xs_tile, ψs_tile = get_attached_coordinates(p, p, assembly_system, v, vdup)
+            if vpartner == 0  # vdup is open
+                # Test whether tiling is sterically possible
+                istiling, tile_edges = find_bonds(p, p, assembly_system, xs_tile, ψs_tile)
+                # istiling && error("tiling not working yet")
+                istiling && break
             else
-                # nothing
+                # Test whether tiling would be sterically possible if blocking particle was not there
+                # TODO: required fix: get a cyclic path (I think the _longest_ paths should be enough, as all shorter
+                # paths should have been discovered at an earlier structure, although this probably interacts
+                # with lower() in non-trivial ways: we could sort the paths by their vertex labels and only take the greatest path?)
+                # if no path exists: continue
+                # if path does exist: check if could tile
+                # if at least one path could tile, return false
+                # alternative (more complicated): check all paths agains a library of 
+                # already discovered cyclic strs
+                blocking_particle, _ = vertex2particle(p, vpartner)
+                could_tile, _ = find_bonds(p, p, assembly_system, xs_tile, ψs_tile, [blocking_particle], [blocking_particle])
+                !could_tile && continue
+
+                blocking_vertices = particle2multivertex(p, blocking_particle)
+                forbidden = zeros(Bool, nv(p.anatomy))
+                forbidden[blocking_vertices] .= true
+                if vertices_connected(p.anatomy, vdup, [v], forbidden)
+                    return false
+                else
+                    # nothing
+                end
             end
         end
     end
-
+    
     new_edges = !istiling ? new_edges : tile_edges
     Δnv = !istiling ? nvertices(p) : 0
     if !istiling
@@ -184,6 +199,9 @@ end
     
 
 function lower!(p::Polyform)
+    # if the structure has a cyclic bond, we should
+    # remove the bond instead of a particle
+    # I guess we always remove the bond with the highest label?
     n = size(p)
     n == 0 && return false
 
