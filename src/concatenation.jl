@@ -22,12 +22,45 @@ function get_sitepos(p::Polyform, geometries, v)
     return p.xs[particle] + rotate(geom.xs[side], p.ψs[particle])
 end
 
+function tile_check(p::Polyform{D}, assembly_system::AssemblySystem, tile_edges, v1, v2) where {D}
+    @assert D == 2  # TODO only works in 2d
 
-function attach_monomer!(p::Polyform{D,T,F}, v::Integer, partner_label::Integer, assembly_system::AssemblySystem, fillhash::Bool=false, check_cycles=false) where {D,T,F}
+    if maximum(p.cyclic) >= D
+        return false
+    end
+    v = findfirst(x->x==1, p.cyclic)
+    w = p.bond_partners[v]
+
+    xs1, ψs1 = get_attached_coordinates(p, p, assembly_system, v, w)
+    xs2, ψs2 = get_attached_coordinates(p, p, assembly_system, v1, v2)
+
+    can_tile, new_edges = find_bonds(p, p, assembly_system, xs1=xs1, ψs1=ψs1, xs2=xs2, ψs2=ψs2)
+    !can_tile && return false
+
+    for e in new_edges
+        if (e ∉ tile_edges || reverse(e) ∉ tile_edges) ||
+            p.cyclic[e.src] == 0
+            return false
+        end
+    end
+
+    xs2, ψs2 = get_attached_coordinates(p, p, assembly_system, v2, v1)
+
+    can_tile, new_edges = find_bonds(p, p, assembly_system, xs1=xs1, ψs1=ψs1, xs2=xs2, ψs2=ψs2)
+    !can_tile && return false
+
+    for e in new_edges
+        if (e ∉ tile_edges || reverse(e) ∉ tile_edges) ||
+            p.cyclic[e.src] == 0
+            return false
+        end
+    end
+
+    return true
+end
+
+function attach_monomer!(p::Polyform{D,T,F}, v::Integer, partner_label::Integer, assembly_system::AssemblySystem, fillhash::Bool=false; findcycles=false) where {D,T,F}
     p.bond_partners[v] != 0 && return false
-    # if iscyclic(p) && return false # don't allow offspring from cyclic strs
-    # BUT: 2d cyclic strs can only be made from already cyclics
-    # this test should be performed later, and reject only strs that do not have more cyclic bonds than before
 
     spcs2, site2 = label2spcssite(partner_label, assembly_system)
     bblock = buildingblocks(assembly_system)[spcs2]
@@ -36,49 +69,68 @@ function attach_monomer!(p::Polyform{D,T,F}, v::Integer, partner_label::Integer,
     xs2, ψs2 = get_attached_coordinates(p, bblock, assembly_system, v, v2)
     duplicate_species = (i for (i, s) in enumerate(species(p)) if s == spcs2 && p.ψs[i] ≈ only(ψs2))
 
-    success, new_edges = find_bonds(p, bblock, assembly_system, xs2, ψs2)
+    success, new_edges = find_bonds(p, bblock, assembly_system; xs2=xs2, ψs2=ψs2)
     !success && return false
 
     istiling = false
-    if check_cycles
+    already_tiling = false
+    iscap = false
+    if findcycles
         tile_edges = eltype(new_edges)[]
         for dup in duplicate_species
-            # we might get away with rejecting if there is more than
-            # one possible cycle, as 
             vdup = particle2vertex(p, dup, site2)
 
             vpartner = p.bond_partners[vdup]
             xs_tile, ψs_tile = get_attached_coordinates(p, p, assembly_system, v, vdup)
             if vpartner == 0  # vdup is open
                 # Test whether tiling is sterically possible
-                istiling, tile_edges = find_bonds(p, p, assembly_system, xs_tile, ψs_tile)
-                # istiling && error("tiling not working yet")
-                istiling && break
+                if istiling
+                    already_tiling = istiling
+                end
+                istiling, tile_edges = find_bonds(p, p, assembly_system, xs2=xs_tile, ψs2=ψs_tile)
+                (istiling && already_tiling) && return false
             else
-                # Test whether tiling would be sterically possible if blocking particle was not there
-                # TODO: required fix: get a cyclic path (I think the _longest_ paths should be enough, as all shorter
-                # paths should have been discovered at an earlier structure, although this probably interacts
-                # with lower() in non-trivial ways: we could sort the paths by their vertex labels and only take the greatest path?)
-                # if no path exists: continue
-                # if path does exist: check if could tile
-                # if at least one path could tile, return false
-                # alternative (more complicated): check all paths agains a library of 
-                # already discovered cyclic strs
-                blocking_particle, _ = vertex2particle(p, vpartner)
-                could_tile, _ = find_bonds(p, p, assembly_system, xs_tile, ψs_tile, [blocking_particle], [blocking_particle])
-                !could_tile && continue
+                # TODO: optimize this
+                if vpartner != 0
+                    blocking_particle, _ = vertex2particle(p, vpartner)
+                    blocking_vertices = particle2multivertex(p, blocking_particle)
+                    disconnected_vertices = [k for k in vertices(p.anatomy) if !has_path(p.anatomy, v, k, exclude_vertices=blocking_vertices)]
+                    vdup in disconnected_vertices && continue
+                end
 
-                blocking_vertices = particle2multivertex(p, blocking_particle)
-                forbidden = zeros(Bool, nv(p.anatomy))
-                forbidden[blocking_vertices] .= true
-                if vertices_connected(p.anatomy, vdup, [v], forbidden)
-                    return false
-                else
-                    # nothing
+                # Test whether tiling would be sterically possible if blocking particle was not there
+                # TODO need to test every path individually
+                pathitr = PathIterator(p.anatomy, v, vdup)
+                for path in pathitr
+                    forbidden_particles = unique([vertex2particle(p, k)[1] for k in findall(iszero, path)])
+                    could_tile, _ = find_bonds(p, p, assembly_system, xs2=xs_tile, ψs2=ψs_tile, ignore_parts1=forbidden_particles, ignore_parts2=forbidden_particles)
+                    if could_tile
+                        iscap = true
+                        break
+                    end
                 end
             end
         end
     end
+
+    if iscap && !istiling
+        return false
+    end
+
+    if !istiling && any(!iszero, p.cyclic)
+        return false
+    end
+    if istiling && any(!iszero, p.cyclic)
+        v, w = first(tile_edges).src, first(tile_edges).dst
+        check = tile_check(p, assembly_system, tile_edges, v, w)
+        !check && return false
+    end
+    # TODO: do a tile check if there are multiple cycles
+    # only allow d cycles if the structure tiles in d dimensions (or the cyclies are "parallel")
+    # Perform tile check by extending all cycles simultaneously and
+    # check if they are compatible!
+    # > d cycles must be impossible, but make sure we dont overreject here
+    # if there are multiple choices
     
     new_edges = !istiling ? new_edges : tile_edges
     Δnv = !istiling ? nvertices(p) : 0
@@ -88,6 +140,7 @@ function attach_monomer!(p::Polyform{D,T,F}, v::Integer, partner_label::Integer,
         append!(p.species, spcs2)
         p.encoder = concatenate(p.encoder, bblock.encoder)
         append!(p.bond_partners, zeros(T, nvertices(bblock)))
+        append!(p.cyclic, zeros(Bool, nvertices(bblock)))
         NautyGraphs.blockdiag!(p.anatomy, bblock.anatomy)
     end
 
@@ -99,6 +152,12 @@ function attach_monomer!(p::Polyform{D,T,F}, v::Integer, partner_label::Integer,
         add_edge!(p.anatomy, vj, vi)
         p.bond_partners[vi] = vj
         p.bond_partners[vj] = vi
+
+        tile_class = maximum(p.cyclic) + 1
+        if istiling 
+            p.cyclic[vi] = tile_class 
+            p.cyclic[vj] = tile_class 
+        end
     end
 
     if fillhash
@@ -129,13 +188,16 @@ function get_attached_coordinates(p1::Polyform, p2::Polyform, assembly_system::A
     return xs2, ψs2
 end
 
-function find_bonds(p1::Polyform, p2::Polyform, assembly_system::AssemblySystem, xs2, ψs2, ignore_parts1=nothing, ignore_parts2=nothing)
+function find_bonds(p1::Polyform, p2::Polyform, assembly_system::AssemblySystem; xs1=nothing, ψs1=nothing, xs2=nothing, ψs2=nothing, ignore_parts1=nothing, ignore_parts2=nothing)
     geoms = geometries(assembly_system)
     intmat = interaction_matrix(assembly_system)
     spcs1 = species(p1)
     spcs2 = species(p2)
     
-    xs1, ψs1 = p1.xs, p1.ψs
+    xs1 = isnothing(xs1) ? p1.xs : xs1
+    ψs1 = isnothing(ψs1) ? p1.ψs : ψs1
+    xs2 = isnothing(xs2) ? p2.xs : xs2
+    ψs2 = isnothing(ψs2) ? p2.ψs : ψs2
 
     new_edges = Edge{Cint}[]
     for (i, (xi, ψi)) in enumerate(zip(xs1, ψs1)), (j, (xj, ψj)) in enumerate(zip(xs2, ψs2))

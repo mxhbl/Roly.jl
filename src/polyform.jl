@@ -11,11 +11,12 @@ mutable struct Polyform{D,T<:Integer,F<:AbstractFloat,R<:RotationOperator{F}}
     xs::Vector{Point{D,F}}
     ψs::Vector{R}
     σ::T
-    function Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs, σ) where {D,T,F}
+    cyclic::Vector{T}
+    function Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs, σ, cyclic=zeros(T, nv(anatomy))) where {D,T,F}
         if D == 2
-            return new{D,T,F,Angle{F}}(anatomy, encoder, bond_status, species, xs, ψs, σ)
+            return new{D,T,F,Angle{F}}(anatomy, encoder, bond_status, species, xs, ψs, σ, cyclic)
         elseif D == 3
-            return new{D,T,F,Quaternion{F}}(anatomy, encoder, bond_status, species, xs, ψs, σ)
+            return new{D,T,F,Quaternion{F}}(anatomy, encoder, bond_status, species, xs, ψs, σ, cyclic)
         else
             error("Polyforms are only defined in dimension 2 and 3.")
         end
@@ -23,12 +24,11 @@ mutable struct Polyform{D,T<:Integer,F<:AbstractFloat,R<:RotationOperator{F}}
 end
 function Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs) where {D,T,F}
     p = Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs, 0)
-    
     canonize!(p)
     return p
 end 
-Polyform(anatomy, encoder, bond_status, species::AbstractVector{T}, xs::AbstractVector{<:Point{D,F}}, ψs, σ) where {D,T,F} = 
-Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs, σ)
+Polyform(anatomy, encoder, bond_status, species::AbstractVector{T}, xs::AbstractVector{<:Point{D,F}}, ψs, σ, cyclic=zeros(T, nv(anatomy))) where {D,T,F} = 
+Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs, σ, cyclic)
 Polyform(anatomy, encoder, bond_status, species::AbstractVector{T}, xs::AbstractVector{<:Point{D,F}}, ψs) where {D,T,F} = 
 Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs)
 function Polyform{D,T,F}() where {D,T,F}
@@ -75,13 +75,13 @@ function canonize!(p::Polyform)
 end
 
 function Base.hash(p::Polyform, h::UInt64)
-    return ghash(p.anatomy, h)
+    return hash(ghash(p.anatomy), h)
 end
 is_isomorphic(p::Polyform, h::Polyform) = ghash(p.anatomy) == ghash(h.anatomy)
 ≃(p::Polyform, h::Polyform) = is_isomorphic(p, h)
 
 function Base.copy(p::Polyform)
-    return Polyform(copy(p.anatomy), copy(p.encoder), copy(p.bond_partners), copy(p.species), copy(p.xs), copy(p.ψs), p.σ)
+    return Polyform(copy(p.anatomy), copy(p.encoder), copy(p.bond_partners), copy(p.species), copy(p.xs), copy(p.ψs), p.σ, copy(p.cyclic))
 end
 function Base.copy!(dest::Polyform{D,T,F}, src::Polyform{D,T,F}) where {D,T,F}
     copy!(dest.anatomy, src.anatomy)
@@ -91,6 +91,8 @@ function Base.copy!(dest::Polyform{D,T,F}, src::Polyform{D,T,F}) where {D,T,F}
     copy!(dest.xs, src.xs)
     copy!(dest.ψs, src.ψs)
     dest.σ = src.σ
+    copy!(dest.cyclic, src.cyclic)
+    # dest.cyclic = src.cyclic
     return dest
 end
 
