@@ -25,7 +25,7 @@ function adj!(u::Polyform{T,F}, v::Polyform{T,F}, j::Integer, hashes::Vector{Has
     copy!(u, v)
     success, j = grow!(u, j, assembly_system)
 
-    if success && ghash(u.anatomy) ∈ hashes
+    if success && rolyhash(u) ∈ hashes
         return adj!(u, v, j + 1, hashes, assembly_system)
     end
 
@@ -83,7 +83,7 @@ function polyrs(v₀::Polyform{D,T,F},
         next = u
         if success
             js[end] = j_new
-            push!(hashes[end], ghash(next.anatomy))
+            push!(hashes[end], rolyhash(next))
 
             f!(k, next)
 
@@ -180,7 +180,7 @@ function polygen(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
     open_bonds = Dict{HashType,Vector{Tuple{Int,Int}}}()
 
     for monomer in bblocks
-        hashval = ghash(monomer)
+        hashval = rolyhash(monomer)
 
         enqueue!(queue, monomer)
         push!(hashes, hashval)
@@ -198,23 +198,23 @@ function polygen(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
             continue
         end
 
-        open_bonds_v = open_bonds[ghash(v)]
+        open_bonds_v = open_bonds[rolyhash(v)]
         bonds = []
         for bond in open_bonds_v
             ai, j = bond
             copy!(u, v)
 
             success = attach_monomer!(u, bond, assembly_system, true)
-            if !success || (ghash(u) ∈ hashes)
+            if !success || (rolyhash(u) ∈ hashes)
                 continue
             end
 
             next = copy(u)
             species_j, aj =  irg_unflatten(j, assembly_system._sites_sum)
-            hashval = ghash(next)
+            hashval = rolyhash(next)
 
             #TODO: pretty this up
-            monomer_opens = open_bonds[ghash(bblocks[species_j])]
+            monomer_opens = open_bonds[rolyhash(bblocks[species_j])]
             new_opens = [b .+ (nfv, 0) for b in monomer_opens if b[1] != aj]
             open_bonds[hashval] = filter(x -> x ∉ bonds && x[1] != ai, open_bonds_v)
             append!(open_bonds[hashval], new_opens)
