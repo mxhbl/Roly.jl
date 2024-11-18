@@ -180,7 +180,7 @@ function polygen(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
     open_bonds = Dict{HashType,Vector{Tuple{Int,Int}}}()
 
     for monomer in bblocks
-        hashval = hash(monomer)
+        hashval = ghash(monomer)
 
         enqueue!(queue, monomer)
         push!(hashes, hashval)
@@ -198,23 +198,23 @@ function polygen(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
             continue
         end
 
-        open_bonds_v = open_bonds[hash(v)]
+        open_bonds_v = open_bonds[ghash(v)]
         bonds = []
         for bond in open_bonds_v
             ai, j = bond
             copy!(u, v)
 
             success = attach_monomer!(u, bond, assembly_system, true)
-            if !success || (hash(u) ∈ hashes)
+            if !success || (ghash(u) ∈ hashes)
                 continue
             end
 
             next = copy(u)
             species_j, aj =  irg_unflatten(j, assembly_system._sites_sum)
-            hashval = hash(next)
+            hashval = ghash(next)
 
             #TODO: pretty this up
-            monomer_opens = open_bonds[hash(bblocks[species_j])]
+            monomer_opens = open_bonds[ghash(bblocks[species_j])]
             new_opens = [b .+ (nfv, 0) for b in monomer_opens if b[1] != aj]
             open_bonds[hashval] = filter(x -> x ∉ bonds && x[1] != ai, open_bonds_v)
             append!(open_bonds[hashval], new_opens)

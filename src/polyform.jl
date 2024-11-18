@@ -73,9 +73,9 @@ function canonize!(p::Polyform)
     return
 end
 
-function Base.hash(p::Polyform, h::UInt64)
-    return ghash(p.anatomy, h)
-end
+# function Base.hash(p::Polyform, h::UInt64)
+#     return hash(ghash(p.anatomy), h)
+# end
 is_isomorphic(p::Polyform, h::Polyform) = ghash(p.anatomy) == ghash(h.anatomy)
 ≃(p::Polyform, h::Polyform) = is_isomorphic(p, h)
 
