@@ -87,14 +87,19 @@ Base.copy(enc::PolyEncoder) = PolyEncoder([[copy(f) for f in part] for part in e
 # Base.copy(enc::PolyEncoder) = PolyEncoder(deepcopy(enc.fwd), copy(enc.bwd))
 function Base.copy!(dest::PolyEncoder{T}, src::PolyEncoder{T}) where {T}
     resize!(dest.fwd, nparticles(src))
-    for i in eachindex(dest.fwd)
-        if isassigned(dest.fwd, i)
-            for j in eachindex(dest.fwd[i])
-                dest.fwd[i][j] .= src.fwd[i][j]
-            end
-        else
+
+    for i in eachindex(src.fwd)
+        # TODO: this breaks in julia 1.11, because sometimes dest[1] === dest[end]
+        # Before this can be fully fixed, use this (slightly inefficient) workaround.
+        # if isassigned(dest.fwd, i)
+        #     for j in eachindex(src.fwd[i])
+        #         dest.fwd[i][j][1] = src.fwd[i][j][1]
+        #         # copyto!(dest.fwd[i][j], src.fwd[i][j])
+        #         # dest.fwd[i][j] .= src.fwd[i][j]
+        #     end
+        # else
             dest.fwd[i] = copy.(src.fwd[i])
-        end
+        # end
     end
     copy!(dest.bwd, src.bwd)
     return dest
