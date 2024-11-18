@@ -210,6 +210,23 @@ function polygen(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
                 enqueue!(queue, next)
                 n_strs += 1
                 n_strs == max_strs && break
+
+                # if findcycles
+                #     if maximum(u.cyclic) > maximum(v.cyclic) + 1
+                #         k = copy(v)
+                #         attach_monomer!(k, vert, partner_label, assembly_system, true; findcycles=false)
+
+                #         if success
+                #             next = copy(k)
+
+                #             push!(values, callback(next))
+                #             push!(hashes, hashval)
+                #             enqueue!(queue, next)
+                #             n_strs += 1
+                #             n_strs == max_strs && break
+                #         end
+                #     end
+                # end
             end
 
             j += 1

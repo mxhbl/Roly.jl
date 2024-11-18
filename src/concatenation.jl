@@ -89,6 +89,8 @@ function attach_monomer!(p::Polyform{D,T,F}, v::Integer, partner_label::Integer,
                 end
                 istiling, tile_edges = find_bonds(p, p, assembly_system, xs2=xs_tile, ψs2=ψs_tile)
                 (istiling && already_tiling) && return false
+                ## TODO if there are parallel bonds, we need to do extra steps
+                ## If parallel bonds form, we also need to construct the non-cylic str (i.e. just do normal attachment)
             else
                 # TODO: optimize this
                 if vpartner != 0
