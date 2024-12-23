@@ -4,108 +4,6 @@ using StaticArrays
 HashType = UInt
 DefInt, DefFloat = Int16, Float32
 
-struct PolyEncoder{T}
-    fwd::Vector{Vector{Vector{T}}}
-    bwd::Vector{SVector{3,T}}
-end
-nparticles(enc::PolyEncoder) = length(enc.fwd)
-nvertices(enc::PolyEncoder) = length(enc.bwd)
-PolyEncoder{T}() where {T} = PolyEncoder(Vector{Vector{T}}[], Vector{SVector{3,T}}())
-function PolyEncoder(fwd::AbstractVector{<:AbstractVector{<:AbstractVector{T}}}) where {T}
-    n_vertices = sum(length(s) for f in fwd for s in f; init=0)
-
-    bwd = Vector{SVector{3,T}}(undef, n_vertices)
-    for i in 1:n_vertices
-        for (j, f) in enumerate(fwd)
-            for (k, s) in enumerate(f)
-                if i ∈ s
-                    bwd[i] = SVector{3,T}(j, k, findfirst(x->x==i, s))
-                    break
-                end
-            end
-        end
-    end
-
-    return PolyEncoder(fwd, bwd)
-end
-
-function Base.permute!(enc::PolyEncoder, p::AbstractVector{<:Integer})
-    @assert length(p) == nvertices(enc)
-
-    permute!(enc.bwd, p)
-    inv_p = invperm(p)
-    for part in enc.fwd
-        for i in eachindex(part)
-            for j in eachindex(part[i])
-                part[i][j] = inv_p[part[i][j]]
-            end
-        end
-    end
-    return
-end
-
-# TODO: the following two methods should be implemented with better memory management,
-# With as few allocations as possible
-function concatenate(enc::PolyEncoder{T}, h::PolyEncoder) where {T}
-    ne = nparticles(enc)
-    me = nvertices(enc)
-    nh = nparticles(h)
-
-    fwd = similar(enc.fwd, ne+nh)
-    for i in eachindex(enc.fwd)
-        fwd[i] = [copy(s) for s in enc.fwd[i]]
-    end
-    for i in eachindex(h.fwd)
-        fwd[i+ne] = [copy(s) .+ me for s in h.fwd[i]]
-    end
-
-    bwd = vcat(enc.bwd, h.bwd .+ Ref(SVector(T(ne), zero(T), zero(T))))
-    return PolyEncoder(fwd, bwd)
-end
-function Base.deleteat!(enc::PolyEncoder, i::Integer)
-    #Flatten all to-be-deleted indices into one vector
-    del_vs = [v for verts in enc.fwd[i] for v in verts]
-    sort!(del_vs)
-
-    vertex_shift(v) = sum(x -> x < v, del_vs)
-    particle_shift(k) = (k > i)
-
-    deleteat!(enc.fwd, i)
-    for part in enc.fwd
-        for j in eachindex(part)
-            @views part[j] .-= vertex_shift.(part[j])
-        end
-    end
-    deleteat!(enc.bwd, del_vs)
-    for i in eachindex(enc.bwd)
-        p, f, s = enc.bwd[i]
-        enc.bwd[i] = SVector(p - particle_shift(p), f, s)
-    end
-    return
-end
-Base.copy(enc::PolyEncoder) = PolyEncoder([[copy(f) for f in part] for part in enc.fwd], copy(enc.bwd))
-# Base.copy(enc::PolyEncoder) = PolyEncoder(deepcopy(enc.fwd), copy(enc.bwd))
-function Base.copy!(dest::PolyEncoder{T}, src::PolyEncoder{T}) where {T}
-    resize!(dest.fwd, nparticles(src))
-
-    for i in eachindex(src.fwd)
-        # TODO: this breaks in julia 1.11, because sometimes dest[1] === dest[end]
-        # Before this can be fully fixed, use this (slightly inefficient) workaround.
-        # if isassigned(dest.fwd, i)
-        #     for j in eachindex(src.fwd[i])
-        #         dest.fwd[i][j][1] = src.fwd[i][j][1]
-        #         # copyto!(dest.fwd[i][j], src.fwd[i][j])
-        #         # dest.fwd[i][j] .= src.fwd[i][j]
-        #     end
-        # else
-            dest.fwd[i] = copy.(src.fwd[i])
-        # end
-    end
-    copy!(dest.bwd, src.bwd)
-    return dest
-end
-
-
 function are_bridge(g::AbstractNautyGraph, vs::AbstractVector{<:Integer})
     neighs = zeros(Bool, nv(g))
     buffer = zeros(Int, nv(g))
@@ -181,4 +79,98 @@ function irg_unflatten(i::Integer, intervals::AbstractVector{<:Integer})
         b = i - intervals[a - 1]
         return (a, b)
     end
+end
+
+function find_nth(f::Function, A, n)
+    # Return the index of the nth true value of f.(A), as well as how many matches were found
+    # TODO this is a weird function, make it better
+    j = 0
+    for (k, a) in enumerate(A)
+        if f(a) j += 1 end
+        j == n && return k, j
+    end
+    return nothing, j
+end
+find_nth(A, n) = find_nth(identity, A, n)
+
+
+mutable struct PathIterator{G,T}
+    g::G
+    v::T
+    w::T
+end
+PathIterator(g, v, w) = PathIterator(g, promote(v, w)...)
+Base.IteratorSize(::PathIterator) = Base.SizeUnknown()
+
+function Base.iterate(pathitr::PathIterator)
+    path = zeros(Int, nv(pathitr.g))
+    path[pathitr.v] = 1
+    path = complete_path!(path, pathitr.g, pathitr.w)    
+    return copy(path), path #TODO: optimize this
+end
+
+function Base.iterate(pathitr::PathIterator, state)
+    path = state
+    neighs = zeros(Int, nv(pathitr.g))
+
+    path_length = maximum(path)
+
+    u = pathitr.w
+    for _ in 1:path_length-1
+        k = path[u]
+        path[u] = 0
+
+        parent = findfirst(x->x==k-1, path)
+        n_neighs = NautyGraphs.outneighbors!(neighs, pathitr.g, parent)
+        idx = @views searchsortedfirst(neighs[1:n_neighs], u)
+
+        if idx < n_neighs && path[neighs[idx + 1]] == 0
+            path[neighs[idx + 1]] = k
+            path = complete_path!(path, pathitr.g, pathitr.w, neighs)
+            return copy(path), path
+        else
+            k -= 1
+            u = parent
+        end
+    end
+
+    return nothing
+end
+
+function complete_path!(path, g, w, neighs=nothing)
+    ## Completes the path by depth first traversal
+    ## Neighbors are picked in order of vertex number (NOT label)
+    neighs = isnothing(neighs) ? zeros(Int, length(path)) : neighs
+
+    v = argmax(path)
+    v_last = 0
+    k = sum(!iszero, path) + 1
+
+    while path[w] == 0
+        n_neighs = NautyGraphs.outneighbors!(neighs, g, v)
+        n0 = let i=findfirst(x->x==v_last, @view neighs[1:n_neighs]) # use searchsortedfirst
+            isnothing(i) ? 1 : i+1
+        end
+        v_last = 0
+
+        success = false
+        for neigh in @view neighs[n0:n_neighs] # Assume neighbors are sorted
+            if path[neigh] == 0
+                v = neigh
+                path[v] = k
+                k += 1
+                success = true
+                break
+            end
+        end
+
+        if !success
+            path[v] = 0
+            k -= 1
+            v_last = v
+            v = argmax(path)
+        end
+    end
+
+    return path
 end

@@ -26,8 +26,9 @@ Quaternion(w::F, x::F, y::F, z::F) where {F<:Real} = Quaternion{F}(w, x, y, z)
 Quaternion(w::Real, x::Real, y::Real, z::Real) = Quaternion(promote(w, x, y, z)...)
 Base.convert(::Type{Quaternion{F}}, v::AbstractVector) where {F} = Quaternion{F}(v[1:4]...)
 Base.convert(::Type{Quaternion{F}}, q::Quaternion) where {F} = Quaternion{F}(q.w, q.x, q.y, q.z)
-# Base.:(==)(a::Quaternion, b::Quaternion) = ...
-# Base.isapprox(a::Quaternion, b::Quaternion) = ...
+# TODO: take symmetry into account
+Base.:(==)(a::Quaternion, b::Quaternion) = a.w == b.w && a.x == b.x && a.y == b.y && a.z == b.z
+Base.isapprox(a::Quaternion, b::Quaternion; kwargs...) = isapprox(a.w, b.w; kwargs...) && isapprox(a.x, b.x; kwargs...) && isapprox(a.y, b.y; kwargs...) && isapprox(a.z, b.z; kwargs...)
 Base.inv(q::Quaternion) = Quaternion(q.w, -q.x, -q.y, -q.z)
 LinearAlgebra.norm(q::Quaternion) = sqrt(q.w * q.w + q.x * q.x + q.y * q.y + q.z * q.z)
 
@@ -68,24 +69,28 @@ function rotate!(xs::AbstractVector{<:Point{3,F}}, ϕ::Quaternion{F}) where {F}
         xs[i] = rotate(xs[i], ϕ)
     end
 end
+function rotate!(ψs::AbstractVector{<:RotationOperator{F}}, ϕ::RotationOperator{F}) where {F}
+    ψs .= Ref(ϕ) .* ψs
+    return
+end
 
 function shift!(xs::AbstractVector{<:Point}, Δx::Point)
-    for i in eachindex(xs)
-        @views xs[i] .+= Δx
-    end
+    xs .+= Ref(Δx)
     return
 end
 
-function grab_at!(xs::AbstractVector{<:Point}, ψs::AbstractVector{<:RotationOperator}, i::Integer)
+function grab!(xs::AbstractVector{<:Point}, ψs::AbstractVector{<:RotationOperator}, i::Integer, Δx=nothing, Δψ=nothing)
     # Shifts and rotates a list of xs and ψs such that particle i is at the origin in reference orientation
-    Δx = -xs[i]
-    ϕ = inv(ψs[i])
+    Δψ = isnothing(Δψ) ? inv(ψs[i]) : Δψ * inv(ψs[i])
 
-    shift!(xs, Δx)
-    rotate!(xs, ϕ)
-    ψs .= ϕ .* ψs
+    shift!(xs, -xs[i])
+    rotate!(xs, Δψ)
+    rotate!(ψs, Δψ)
+
+    !isnothing(Δx) && shift!(xs, Δx)
     return
 end
+
 
 function cart2pol(x::F, y::Real) where {F}
     y = convert(F, y)

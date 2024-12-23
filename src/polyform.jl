@@ -5,38 +5,38 @@ using NautyGraphs
 
 mutable struct Polyform{D,T<:Integer,F<:AbstractFloat,R<:RotationOperator{F}}
     anatomy::NautyDiGraph
-    encoder::PolyEncoder{T}
     bond_partners::Vector{T}
+    canonical_order::Vector{T}
     species::Vector{T}
     xs::Vector{Point{D,F}}
     ψs::Vector{R}
     σ::T
-    function Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs, σ) where {D,T,F}
+    function Polyform{D,T,F}(anatomy, bond_status, canonical_order, species, xs, ψs, σ) where {D,T,F}
         if D == 2
-            return new{D,T,F,Angle{F}}(anatomy, encoder, bond_status, species, xs, ψs, σ)
+            return new{D,T,F,Angle{F}}(anatomy, bond_status, canonical_order, species, xs, ψs, σ)
         elseif D == 3
-            return new{D,T,F,Quaternion{F}}(anatomy, encoder, bond_status, species, xs, ψs, σ)
+            return new{D,T,F,Quaternion{F}}(anatomy, bond_status, canonical_order, species, xs, ψs, σ)
         else
             error("Polyforms are only defined in dimension 2 and 3.")
         end
     end
 end
-function Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs) where {D,T,F}
-    p = Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs, 0)
+function Polyform{D,T,F}(anatomy, bond_status, canonical_order, species, xs, ψs) where {D,T,F}
+    p = Polyform{D,T,F}(anatomy, bond_status, canonical_order, species, xs, ψs, 0)
     canonize!(p)
     return p
 end 
-Polyform(anatomy, encoder, bond_status, species::AbstractVector{T}, xs::AbstractVector{<:Point{D,F}}, ψs, σ) where {D,T,F} = 
-Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs, σ)
-Polyform(anatomy, encoder, bond_status, species::AbstractVector{T}, xs::AbstractVector{<:Point{D,F}}, ψs) where {D,T,F} = 
-Polyform{D,T,F}(anatomy, encoder, bond_status, species, xs, ψs)
+Polyform(anatomy, bond_status, canonical_order, species::AbstractVector{T}, xs::AbstractVector{<:Point{D,F}}, ψs, σ) where {D,T,F} = 
+Polyform{D,T,F}(anatomy, bond_status, canonical_order, species, xs, ψs, σ)
+Polyform(anatomy, bond_status, canonical_order, species::AbstractVector{T}, xs::AbstractVector{<:Point{D,F}}, ψs) where {D,T,F} = 
+Polyform{D,T,F}(anatomy, bond_status, canonical_order, species, xs, ψs)
 function Polyform{D,T,F}() where {D,T,F}
     if D == 2
         ψs = Angle{F}[]
     else
         ψs = Quaternion{F}[]
     end
-    return Polyform{D,T,F}(NautyDiGraph(0), PolyEncoder{T}(), zeros(T, 0), zeros(T, 0), SVector{2,F}[], ψs, 0)
+    return Polyform{D,T,F}(NautyDiGraph(0), zeros(T, 0), zeros(T, 0), zeros(T, 0), SVector{2,F}[], ψs, 0)
 end
 anatomy(p::Polyform) = p.anatomy
 faces(::Type{T}, p::Polyform) where {T} = convert(Vector{T}, p.anatomy.labels)
@@ -58,35 +58,26 @@ end
 Base.show(io::Core.IO, ::Type{Polyform{D,T,F}}) where {D,T,F} = print(io, "Polyform{$D,$T,$F}")
 
 function canonize!(p::Polyform)
-    canon_perm, n = NautyGraphs.canonize!(p.anatomy)
-    permute!(p.encoder, canon_perm)
-    p.bond_partners .= p.bond_partners[canon_perm]
-
-    inv_perm = invperm(canon_perm)
-    for (i, v) in enumerate(p.bond_partners)
-        if v == 0
-            continue
-        end
-        p.bond_partners[i] = inv_perm[v]
-    end
+    n, _, canon_perm, _ = NautyGraphs._nautyhash(p.anatomy)
+    p.canonical_order .= canon_perm
     p.σ = n
     return
 end
 
-# function Base.hash(p::Polyform, h::UInt64)
-#     return hash(ghash(p.anatomy), h)
-# end
-rhash(p::Polyform) = ghash(p.anatomy)
-is_isomorphic(p::Polyform, h::Polyform) = ghash(p.anatomy) == ghash(h.anatomy)
-≃(p::Polyform, h::Polyform) = is_isomorphic(p, h)
+function rhash(p::Polyform)
+    return ghash(p.anatomy)
+end
+is_isomorphic(p::Polyform, h::Polyform) = p ≃ h
+≃(p::Polyform, h::Polyform) = NautyGraphs.is_isomorphic(p.anatomy, h.anatomy)
+
 
 function Base.copy(p::Polyform)
-    return Polyform(copy(p.anatomy), copy(p.encoder), copy(p.bond_partners), copy(p.species), copy(p.xs), copy(p.ψs), p.σ)
+    return Polyform(copy(p.anatomy), copy(p.bond_partners), copy(p.canonical_order), copy(p.species), copy(p.xs), copy(p.ψs), p.σ)
 end
 function Base.copy!(dest::Polyform{D,T,F}, src::Polyform{D,T,F}) where {D,T,F}
     copy!(dest.anatomy, src.anatomy)
-    copy!(dest.encoder, src.encoder)
     copy!(dest.bond_partners, src.bond_partners)
+    copy!(dest.canonical_order, src.canonical_order)
     copy!(dest.species, src.species)
     copy!(dest.xs, src.xs)
     copy!(dest.ψs, src.ψs)
@@ -109,8 +100,59 @@ function create_monomer(geometry::AbstractGeometry{T,F},
     end
 
     return Polyform(NautyDiGraph(geometry.anatomy, convert(Vector{T}, face_labels)),
-                    copy(geometry.encoder),
-                    zeros(T, nvertices(geometry.encoder)), # TODO: clean this up
-                    [T(species_idx)],
-                    xs, ψs)
+                                 zeros(T, nvertices(geometry)),
+                                 convert(Vector{T}, 1:nvertices(geometry)),
+                                 [T(species_idx)],
+                                 xs, ψs)
+end
+
+function particle2vertex(p::Polyform, assembly_system, particle::Integer, site::Integer)
+    @assert particle <= nparticles(p)
+    @assert site <= nsites(assembly_system.geometries[p.species[particle]])
+    vps = (vertices_per_site(assembly_system.geometries[i]) for i in @view p.species[1:particle])
+    return 1 + sum(sum(nvs) for nvs in Iterators.take(vps, particle-1); init=0) + sum(@view last(vps)[1:site-1])
+end
+function particle2vertex(p::Polyform, assembly_system, particle::Integer)
+    @assert particle <= nparticles(p)
+    vps = (vertices_per_site(assembly_system.geometries[i]) for i in @view p.species[1:particle])
+    vertices = sum(sum(nvs) for nvs in Iterators.take(vps, particle-1); init=0) .+ cumsum((1, last(vps)[1:end-1]...))
+    return vertices
+end
+
+function particle2multivertex(p::Polyform, assembly_system, particle::Integer, site::Integer)
+    @assert particle <= nparticles(p)
+    @assert site <= nsites(assembly_system.geometries[p.species[particle]])
+    vps = (vertices_per_site(assembly_system.geometries[i]) for i in @view p.species[1:particle])
+    start_vertex = 1 + sum(sum(nvs) for nvs in Iterators.take(vps, particle-1); init=0) + sum(@view last(vps)[1:site-1])
+    end_vertex = start_vertex + last(vps)[site] - 1
+    return start_vertex:end_vertex
+end
+function particle2multivertex(p::Polyform, assembly_system, particle::Integer)
+    @assert particle <= nparticles(p)
+    vps = (vertices_per_site(assembly_system.geometries[i]) for i in @view p.species[1:particle])
+    start_vertex = 1 + sum(sum(nvs) for nvs in Iterators.take(vps, particle-1); init=0)
+    end_vertex = start_vertex + sum(last(vps)) - 1
+    return start_vertex:end_vertex
+end
+function vertex2particle(p::Polyform, assembly_system, vertex::Integer)
+    @assert vertex <= nvertices(p)
+    vps = (vertices_per_site(assembly_system.geometries[i]) for i in p.species)
+    particle, site = 0, 0
+    for vp in vps
+        particle += 1
+        for v in vp
+            site += 1
+            vertex -= v
+            if vertex <= 0
+                return particle, site
+            end
+        end
+        site = 0
+    end
+    return
+end
+function vertex2label(p::Polyform, assembly_system, vertex::Integer)
+    particle, site = vertex2particle(p, assembly_system, vertex)
+    spcs = species(p)[particle]
+    return spcssite2label(spcs, site, assembly_system)
 end

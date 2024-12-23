@@ -2,9 +2,9 @@ using Base.Iterators
 using DataStructures
 using NautyGraphs
 
-function f!(k::Polyform{T,F}, s::Polyform{T,F}) where {T,F}
+function f!(k::Polyform{T,F}, s::Polyform{T,F}, assembly_system) where {T,F}
     copy!(k, s)
-    shrink!(k)
+    lower!(k, assembly_system)
     return k
 end
 
@@ -12,8 +12,8 @@ function adj!(u::Polyform{T,F}, v::Polyform{T,F}, j::Integer, hashes::Vector{Has
               assembly_system::AssemblySystem) where {T,F}
     ### TODO: We should exploit that canonical labels are guaranteed (see Nauty User Guide p.4) to be in order of color
     ### So, if we know the color of the particle that would be removed, we can filter the possible offspring
-    bblocks = buildingblocks(assembly_system)
     if size(v) == 0
+        bblocks = buildingblocks(assembly_system)
         if j > length(bblocks)
             return false, j + 1
         end
@@ -23,7 +23,7 @@ function adj!(u::Polyform{T,F}, v::Polyform{T,F}, j::Integer, hashes::Vector{Has
     end
 
     copy!(u, v)
-    success, j = grow!(u, j, assembly_system)
+    success, j = raise!(u, j, assembly_system)
 
     if success && rhash(u) ∈ hashes
         return adj!(u, v, j + 1, hashes, assembly_system)
@@ -85,7 +85,7 @@ function polyrs(v₀::Polyform{D,T,F},
             js[end] = j_new
             push!(hashes[end], rhash(next))
 
-            f!(k, next)
+            f!(k, next, assembly_system)
 
             if k ≃ v
                 if rejecting
@@ -136,7 +136,7 @@ function polyrs(v₀::Polyform{D,T,F},
         end
 
         if depth > 0
-            f!(k, v)    # TODO could speed this up by storing structures
+            f!(k, v, assembly_system)    # TODO could speed this up by storing structures
             copy!(v, k)
 
             depth -= 1
@@ -152,14 +152,14 @@ function polyrs(v₀::Polyform{D,T,F},
 end
 
 function polyenum(assembly_system::AssemblySystem{D,T,F,G};
-                  max_size::Number=Inf, max_strs::Number=Inf,
+                  max_size=nothing, max_strs=nothing,
                   reducer::FnorNothing=nothing,
                   reduce_op::FnorNothing=Base.:+,
                   aggregator::FnorNothing=nothing,
                   rejector::FnorNothing=nothing) where {D,T,F,G}
     v₀ = Polyform{D,T,F}()
-    max_size = isinf(max_size) ? 0 : convert(Int, max_size)
-    max_strs = isinf(max_strs) ? 0 : convert(Int, max_strs)
+    max_size = isnothing(max_size) ? 0 : max_size
+    max_strs = isnothing(max_strs) ? 0 : max_strs
 
     out_base, out_vals = polyrs(v₀, assembly_system, reducer, reduce_op, aggregator, rejector, max_size, max_strs)
     if isnothing(reducer) && isnothing(aggregator) && isnothing(rejector)
@@ -174,17 +174,14 @@ function polygen(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
                       max_size=Inf, max_strs=Inf) where {D,T,F,G}
     bblocks = buildingblocks(assembly_system)
 
-    values = [callback(monomer) for monomer in bblocks]
+    values = [callback(bblock) for bblock in bblocks]
     hashes = Set{HashType}()
     queue = Queue{Polyform{D,T,F}}()
-    open_bonds = Dict{HashType,Vector{Tuple{Int,Int}}}()
 
-    for monomer in bblocks
-        hashval = rhash(monomer)
-
-        enqueue!(queue, monomer)
+    for bblock in bblocks
+        hashval = rhash(bblock)
+        enqueue!(queue, bblock)
         push!(hashes, hashval)
-        open_bonds[hashval] = all_open_bonds(monomer, assembly_system)
     end
 
     u = Polyform{D,T,F}()
@@ -193,38 +190,31 @@ function polygen(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
     while !isempty(queue) && n_strs < max_strs
         v = dequeue!(queue)
         n = size(v)
-        nfv = nvertices(v)
         if n >= max_size
             continue
         end
 
-        open_bonds_v = open_bonds[rhash(v)]
-        bonds = []
-        for bond in open_bonds_v
-            ai, j = bond
+        j = 1
+        vert, partner_label = open_bond(v, assembly_system, j)
+        while !iszero(vert)
             copy!(u, v)
 
-            success = attach_monomer!(u, bond, assembly_system, true)
-            if !success || (rhash(u) ∈ hashes)
-                continue
+            success = attach_monomer!(u, vert, partner_label, assembly_system, true)
+            hashval = rhash(u)
+
+            if success && (hashval ∉ hashes)
+                next = copy(u)
+            
+                push!(values, callback(next))
+                push!(hashes, hashval)
+                enqueue!(queue, next)
+                
+                n_strs += 1
+                n_strs == max_strs && break
             end
 
-            next = copy(u)
-            species_j, aj =  irg_unflatten(j, assembly_system._sites_sum)
-            hashval = rhash(next)
-
-            #TODO: pretty this up
-            monomer_opens = open_bonds[rhash(bblocks[species_j])]
-            new_opens = [b .+ (nfv, 0) for b in monomer_opens if b[1] != aj]
-            open_bonds[hashval] = filter(x -> x ∉ bonds && x[1] != ai, open_bonds_v)
-            append!(open_bonds[hashval], new_opens)
-
-            push!(values, callback(next))
-            push!(hashes, hashval)
-            push!(bonds, bond)
-            enqueue!(queue, next)
-            n_strs += 1
-            n_strs == max_strs && break
+            j += 1
+            vert, partner_label = open_bond(v, assembly_system, j)
         end
     end
 
