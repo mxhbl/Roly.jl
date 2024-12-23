@@ -105,7 +105,7 @@ function anatomy(asys::AssemblySystem)
     return anatomy
 end
 
-function Base.hash(asys::AssemblySystem)
+function rhash(asys::AssemblySystem)
     a = anatomy(asys)
     a_prime = NautyDiGraph(adjacency_matrix(a)', a.labels)
     return hash(sort([ghash(a), ghash(a_prime)]))

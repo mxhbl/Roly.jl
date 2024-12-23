@@ -25,7 +25,7 @@ function adj!(u::Polyform{T,F}, v::Polyform{T,F}, j::Integer, hashes::Vector{Has
     copy!(u, v)
     success, j = raise!(u, j, assembly_system)
 
-    if success && ghash(u.anatomy) ∈ hashes
+    if success && rhash(u) ∈ hashes
         return adj!(u, v, j + 1, hashes, assembly_system)
     end
 
@@ -83,7 +83,7 @@ function polyrs(v₀::Polyform{D,T,F},
         next = u
         if success
             js[end] = j_new
-            push!(hashes[end], ghash(next.anatomy))
+            push!(hashes[end], rhash(next))
 
             f!(k, next, assembly_system)
 
@@ -179,7 +179,7 @@ function polygen(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
     queue = Queue{Polyform{D,T,F}}()
 
     for bblock in bblocks
-        hashval = hash(bblock)
+        hashval = rhash(bblock)
         enqueue!(queue, bblock)
         push!(hashes, hashval)
     end
@@ -200,7 +200,7 @@ function polygen(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
             copy!(u, v)
 
             success = attach_monomer!(u, vert, partner_label, assembly_system, true)
-            hashval = hash(u)
+            hashval = rhash(u)
 
             if success && (hashval ∉ hashes)
                 next = copy(u)

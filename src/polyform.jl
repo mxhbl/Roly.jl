@@ -58,14 +58,14 @@ end
 Base.show(io::Core.IO, ::Type{Polyform{D,T,F}}) where {D,T,F} = print(io, "Polyform{$D,$T,$F}")
 
 function canonize!(p::Polyform)
-    n, _, canon_perm = NautyGraphs.nauty(p.anatomy)
+    n, _, canon_perm, _ = NautyGraphs._nautyhash(p.anatomy)
     p.canonical_order .= canon_perm
     p.σ = n
     return
 end
 
-function Base.hash(p::Polyform, h::UInt64)
-    return hash(ghash(p.anatomy), h)
+function rhash(p::Polyform)
+    return ghash(p.anatomy)
 end
 is_isomorphic(p::Polyform, h::Polyform) = p ≃ h
 ≃(p::Polyform, h::Polyform) = NautyGraphs.is_isomorphic(p.anatomy, h.anatomy)
@@ -108,9 +108,7 @@ end
 function particle2vertex(p::Polyform, assembly_system, particle::Integer, site::Integer)
     @assert particle <= nparticles(p)
     @assert site <= nsites(assembly_system.geometries[p.species[particle]])
-    # TODO: use iterators / remove allocations
     vps = (vertices_per_site(assembly_system.geometries[i]) for i in @view p.species[1:particle])
-
     return 1 + sum(sum(nvs) for nvs in Iterators.take(vps, particle-1); init=0) + sum(@view last(vps)[1:site-1])
 end
 function particle2vertex(p::Polyform, assembly_system, particle::Integer)
