@@ -2,9 +2,9 @@ using Base.Iterators
 using DataStructures
 using NautyGraphs
 
-function f!(k::Polyform{T,F}, s::Polyform{T,F}) where {T,F}
+function f!(k::Polyform{T,F}, s::Polyform{T,F}, assembly_system) where {T,F}
     copy!(k, s)
-    lower!(k)
+    lower!(k, assembly_system)
     return k
 end
 
@@ -85,7 +85,7 @@ function polyrs(v₀::Polyform{D,T,F},
             js[end] = j_new
             push!(hashes[end], ghash(next.anatomy))
 
-            f!(k, next)
+            f!(k, next, assembly_system)
 
             if k ≃ v
                 if rejecting
@@ -136,7 +136,7 @@ function polyrs(v₀::Polyform{D,T,F},
         end
 
         if depth > 0
-            f!(k, v)    # TODO could speed this up by storing structures
+            f!(k, v, assembly_system)    # TODO could speed this up by storing structures
             copy!(v, k)
 
             depth -= 1

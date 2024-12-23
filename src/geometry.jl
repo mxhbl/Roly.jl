@@ -5,6 +5,8 @@ using Graphs: cycle_digraph
 
 abstract type AbstractGeometry{T<:Integer,F<:AbstractFloat} end
 nsites(geom::AbstractGeometry) = length(geom.xs)
+vertices_per_site(geom::AbstractGeometry) = geom.site_vertices
+nvertices(geom::AbstractGeometry) = sum(vertices_per_site(geom))
 
 struct PolygonGeometry{T<:Integer,F<:AbstractFloat} <: AbstractGeometry{T,F}
     xs::Vector{Point{2,F}}                  # Displacement vectors from the center to the binding sites
@@ -12,7 +14,7 @@ struct PolygonGeometry{T<:Integer,F<:AbstractFloat} <: AbstractGeometry{T,F}
     Δθs::Vector{Angle{F}}                   # Rotation to be applied to the added particle (assumed to be in reference orientation) once attached to side i 
     corners::Vector{Point{2,F}}             # Corners of the Polygon used for overlap checking
     anatomy::NautyDiGraph
-    encoder::PolyEncoder{T}
+    site_vertices::Vector{T}
     R_min::F
     R_max::F
 
@@ -28,12 +30,12 @@ struct PolygonGeometry{T<:Integer,F<:AbstractFloat} <: AbstractGeometry{T,F}
 
         xs = [SVector{2,F}(pol2cart(r, -θ.θ - 1/2)) for (r, θ) in zip(rs, θs_ref)]
         anatomy = NautyDiGraph(cycle_digraph(n))
-        encoder = PolyEncoder([[[T(i)] for i in 1:length(xs)]])
+        site_vertices = fill(one(T), n)
 
         R_min = minimum(norm.(xs))
         R_max = maximum(norm.(corners))
 
-        return new{T,F}(xs, θs_ref, Δθs, corners, anatomy, encoder, R_min, R_max)
+        return new{T,F}(xs, θs_ref, Δθs, corners, anatomy, site_vertices, R_min, R_max)
     end
 end
 
@@ -49,7 +51,7 @@ struct PolyhedronGeometry{T,F<:AbstractFloat} <: AbstractGeometry{T,F}
     Δθs::Vector{Quaternion{F}}            # Rotation to be applied to the added particle (assumed to be in reference orientation) once attached to side i 
     corners::Vector{Point{3,F}}
     anatomy::NautyDiGraph                 # Oriented graph of the dual polyhedron associated with the bb symmetry group
-    encoder::PolyEncoder{T}
+    site_vertices::Vector{T}
     R_min::F
     R_max::F
 
@@ -88,7 +90,7 @@ struct PolyhedronGeometry{T,F<:AbstractFloat} <: AbstractGeometry{T,F}
                 G[i, j] = G[j, i] = 1
             end
             anatomy = NautyDiGraph(G)
-            encoder = PolyEncoder([[collect(T, i:i+3) for i in 1:4:24]])
+            site_vertices = fill(T(4), 6)
 
             R_min = minimum(norm.(xs))
             R_max = maximum(norm.(corners))
@@ -96,7 +98,7 @@ struct PolyhedronGeometry{T,F<:AbstractFloat} <: AbstractGeometry{T,F}
             error("Shape $shape not supported.")
         end
         
-        return new{T,F}(xs, θs_ref, Δθs, corners, anatomy, encoder, R_min, R_max)
+        return new{T,F}(xs, θs_ref, Δθs, corners, anatomy, site_vertices, R_min, R_max)
     end
 end
 
