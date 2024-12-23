@@ -109,35 +109,35 @@ function particle2vertex(p::Polyform, assembly_system, particle::Integer, site::
     @assert particle <= nparticles(p)
     @assert site <= nsites(assembly_system.geometries[p.species[particle]])
     # TODO: use iterators / remove allocations
-    vps = [vertices_per_site(assembly_system.geometries[i]) for i in @view p.species[1:particle]]
+    vps = (vertices_per_site(assembly_system.geometries[i]) for i in @view p.species[1:particle])
 
-    return 1 + sum(sum(nvs) for nvs in vps[1:particle-1]; init=0) + sum(last(vps)[1:site-1])
+    return 1 + sum(sum(nvs) for nvs in Iterators.take(vps, particle-1); init=0) + sum(@view last(vps)[1:site-1])
 end
 function particle2vertex(p::Polyform, assembly_system, particle::Integer)
     @assert particle <= nparticles(p)
-    vps = [vertices_per_site(assembly_system.geometries[i]) for i in @view p.species[1:particle]]
-    vertices = sum(sum(nvs) for nvs in vps[1:particle-1]; init=0) .+ cumsum([1, last(vps)[1:end-1]...])
+    vps = (vertices_per_site(assembly_system.geometries[i]) for i in @view p.species[1:particle])
+    vertices = sum(sum(nvs) for nvs in Iterators.take(vps, particle-1); init=0) .+ cumsum((1, last(vps)[1:end-1]...))
     return vertices
 end
 
 function particle2multivertex(p::Polyform, assembly_system, particle::Integer, site::Integer)
     @assert particle <= nparticles(p)
     @assert site <= nsites(assembly_system.geometries[p.species[particle]])
-    vps = [vertices_per_site(assembly_system.geometries[i]) for i in @view p.species[1:particle]]
-    start_vertex = 1 + sum(sum(nvs) for nvs in vps[1:particle-1]; init=0) + sum(last(vps)[1:site-1])
+    vps = (vertices_per_site(assembly_system.geometries[i]) for i in @view p.species[1:particle])
+    start_vertex = 1 + sum(sum(nvs) for nvs in Iterators.take(vps, particle-1); init=0) + sum(@view last(vps)[1:site-1])
     end_vertex = start_vertex + last(vps)[site] - 1
     return start_vertex:end_vertex
 end
 function particle2multivertex(p::Polyform, assembly_system, particle::Integer)
     @assert particle <= nparticles(p)
-    vps = [vertices_per_site(assembly_system.geometries[i]) for i in @view p.species[1:particle]]
-    start_vertex = 1 + sum(sum(nvs) for nvs in vps[1:particle-1]; init=0)
+    vps = (vertices_per_site(assembly_system.geometries[i]) for i in @view p.species[1:particle])
+    start_vertex = 1 + sum(sum(nvs) for nvs in Iterators.take(vps, particle-1); init=0)
     end_vertex = start_vertex + sum(last(vps)) - 1
     return start_vertex:end_vertex
 end
 function vertex2particle(p::Polyform, assembly_system, vertex::Integer)
     @assert vertex <= nvertices(p)
-    vps = [vertices_per_site(assembly_system.geometries[i]) for i in p.species]
+    vps = (vertices_per_site(assembly_system.geometries[i]) for i in p.species)
     particle, site = 0, 0
     for vp in vps
         particle += 1
