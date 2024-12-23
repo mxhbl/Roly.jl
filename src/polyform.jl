@@ -70,6 +70,7 @@ end
 is_isomorphic(p::Polyform, h::Polyform) = p ≃ h
 ≃(p::Polyform, h::Polyform) = NautyGraphs.is_isomorphic(p.anatomy, h.anatomy)
 
+
 function Base.copy(p::Polyform)
     return Polyform(copy(p.anatomy), copy(p.bond_partners), copy(p.canonical_order), copy(p.species), copy(p.xs), copy(p.ψs), p.σ)
 end
