@@ -87,7 +87,7 @@ Base.copy(enc::PolyEncoder) = PolyEncoder([[copy(f) for f in part] for part in e
 # Base.copy(enc::PolyEncoder) = PolyEncoder(deepcopy(enc.fwd), copy(enc.bwd))
 function Base.copy!(dest::PolyEncoder{T}, src::PolyEncoder{T}) where {T}
     resize!(dest.fwd, nparticles(src))
-    for i in eachindex(dest.fwd)
+    for i in eachindex(src.fwd)
         if isassigned(dest.fwd, i)
             for j in eachindex(dest.fwd[i])
                 dest.fwd[i][j] .= src.fwd[i][j]

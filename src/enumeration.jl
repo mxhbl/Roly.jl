@@ -171,7 +171,7 @@ end
 
 
 function polygen(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
-                      max_depth=Inf, max_strs=Inf, findcycles=false) where {D,T,F,G}
+                      max_size=Inf, max_strs=Inf) where {D,T,F,G}
     bblocks = buildingblocks(assembly_system)
 
     values = [callback(bblock) for bblock in bblocks]
@@ -190,7 +190,7 @@ function polygen(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
     while !isempty(queue) && n_strs < max_strs
         v = dequeue!(queue)
         n = size(v)
-        if n >= max_depth
+        if n >= max_size
             continue
         end
 
@@ -199,7 +199,7 @@ function polygen(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
         while !iszero(vert)
             copy!(u, v)
 
-            success = attach_monomer!(u, vert, partner_label, assembly_system, true; findcycles=findcycles)
+            success = attach_monomer!(u, vert, partner_label, assembly_system, true)
             hashval = hash(u)
 
             if success && (hashval ∉ hashes)
@@ -208,25 +208,9 @@ function polygen(callback::Function, assembly_system::AssemblySystem{D,T,F,G};
                 push!(values, callback(next))
                 push!(hashes, hashval)
                 enqueue!(queue, next)
+                
                 n_strs += 1
                 n_strs == max_strs && break
-
-                # if findcycles
-                #     if maximum(u.cyclic) > maximum(v.cyclic) + 1
-                #         k = copy(v)
-                #         attach_monomer!(k, vert, partner_label, assembly_system, true; findcycles=false)
-
-                #         if success
-                #             next = copy(k)
-
-                #             push!(values, callback(next))
-                #             push!(hashes, hashval)
-                #             enqueue!(queue, next)
-                #             n_strs += 1
-                #             n_strs == max_strs && break
-                #         end
-                #     end
-                # end
             end
 
             j += 1
