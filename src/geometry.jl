@@ -1,8 +1,3 @@
-using LinearAlgebra
-using SparseArrays
-using NautyGraphs
-using Graphs: cycle_digraph
-
 abstract type AbstractGeometry{T<:Integer,F<:AbstractFloat} end
 nsites(geom::AbstractGeometry) = length(geom.xs)
 vertices_per_site(geom::AbstractGeometry) = geom.site_vertices

@@ -1,7 +1,3 @@
-using Base.Iterators
-using DataStructures
-using NautyGraphs
-
 function f!(k::Polyform{T,F}, s::Polyform{T,F}, assembly_system) where {T,F}
     copy!(k, s)
     lower!(k, assembly_system)

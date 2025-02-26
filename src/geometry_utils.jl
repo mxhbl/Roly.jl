@@ -1,6 +1,3 @@
-using StaticArrays
-using LinearAlgebra
-
 Point{D,F} = SVector{D,F}
 abstract type RotationOperator{F<:Real} end
 

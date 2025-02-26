@@ -1,5 +1,9 @@
 module Roly
 
+using LinearAlgebra, StaticArrays, SparseArrays
+using Base.Iterators, DataStructures
+using Graphs, NautyGraphs
+
 export polyenum, polygen
 export AssemblySystem, Polyform, rhash
 export PolygonGeometry, UnitTriangleGeometry, UnitSquareGeometry, UnitPentagonGeometry, UnitHexagonGeometry, UnitCubeGeometry

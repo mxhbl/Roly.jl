@@ -1,6 +1,3 @@
-using NautyGraphs
-using StaticArrays
-
 HashType = UInt
 DefInt, DefFloat = Int16, Float32
 

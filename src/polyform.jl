@@ -1,8 +1,3 @@
-using LinearAlgebra
-using StaticArrays
-using Graphs
-using NautyGraphs
-
 mutable struct Polyform{D,T<:Integer,F<:AbstractFloat,R<:RotationOperator{F}}
     anatomy::NautyDiGraph
     bond_partners::Vector{T}
@@ -57,10 +52,10 @@ function Base.show(io::Core.IO, p::Polyform{D,T,F}) where {D,T,F}
 end
 Base.show(io::Core.IO, ::Type{Polyform{D,T,F}}) where {D,T,F} = print(io, "Polyform{$D,$T,$F}")
 
-function canonize!(p::Polyform)
-    n, _, canon_perm, _ = NautyGraphs._nautyhash(p.anatomy)
-    p.canonical_order .= canon_perm
-    p.σ = n
+function canonize!(p::Polyform{D,T}) where {D,T}
+    canonperm, autg = nauty(p.anatomy; canonize=false)
+    p.canonical_order .= canonperm
+    p.σ = convert(T, autg.n)
     return
 end
 
