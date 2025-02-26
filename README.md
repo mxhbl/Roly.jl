@@ -50,13 +50,18 @@ draw_polyforms(strs, asys, "filename.pdf//png")
 ```
 
 ## Citation
-If you use Roly.jl in your work, please cite the paper below.
+If you use Roly.jl in your work, please cite [our paper](https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.134.058204) below:
 ```
-@article{roly2024,
-      title={Accessing Semi-Addressable Self Assembly with Efficient Structure Enumeration}, 
-      author={Maximilian C. H\"ubl and Carl P. Goodrich},
-      year={2024},
-      eprint={2405.13567},
-      archivePrefix={arXiv},
+@article{roly2025, 
+         year = {2025}, 
+         title = {{Accessing Semiaddressable Self-Assembly with Efficient Structure Enumeration}}, 
+         author = {Hübl, Maximilian C. and Goodrich, Carl P.}, 
+         journal = {Physical Review Letters}, 
+         issn = {0031-9007}, 
+         doi = {10.1103/physrevlett.134.058204}, 
+         pages = {058204}, 
+         number = {5}, 
+         volume = {134}, 
+         keywords = {}
 }
 ```
