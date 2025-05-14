@@ -5,7 +5,7 @@ using Base.Iterators, DataStructures
 using Graphs, NautyGraphs
 
 export polyenum, polygen
-export AssemblySystem, Polyform, rhash
+export AssemblySystem, Polyform, rhash, composition, compositions
 export PolygonGeometry, UnitTriangleGeometry, UnitSquareGeometry, UnitPentagonGeometry, UnitHexagonGeometry, UnitCubeGeometry
 
 include("utils.jl")
