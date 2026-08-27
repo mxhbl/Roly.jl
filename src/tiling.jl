@@ -35,6 +35,14 @@ function Base.:(==)(a::Tiling, b::Tiling)
     return all(v -> any(w -> _orient(v) ≈ _orient(w), vb), va)
 end
 
+function Base.hash(t::Tiling, h::UInt)
+    h = hash(graphrep(unitcell(t)), h)
+    h = hash(sort(bondtypes(t)), h)
+    h = hash(iscomplete(t), h)
+    h = hash(tilingorder(t), h)
+    return hash(length(latticevectors(t)), h)
+end
+
 """
     unitcell(t::Tiling)
 
@@ -106,108 +114,9 @@ function tilings(poly::Polyform; nreps::Integer=2, maxorder::Integer=1)
     for cell in cells
         # the cell is carried through the search as a meta-polyform and read back as a polyform
         # of `rules` once, here, rather than once per candidate
-        _addtilings!(out, cell, metarules, rules, recast(cell.meta, rules), nreps)
+        _addtilings!(out, cell, metarules, rules, recast(cell, rules), nreps)
     end
     return unique!(out)
-end
-
-function Base.hash(t::Tiling, h::UInt)
-    h = hash(graphrep(unitcell(t)), h)
-    h = hash(sort(bondtypes(t)), h)
-    h = hash(iscomplete(t), h)
-    h = hash(tilingorder(t), h)
-    return hash(length(latticevectors(t)), h)
-end
-
-# spatial units are O(1), so use sqrt(eps) for absolute tolerance
-_tol(::AbstractVector{F}) where {F} = sqrt(eps(F))
-
-# A vector and its negative generate the same translations, so pick the one whose first
-# significant component is positive.
-function _orient(v::AbstractVector)
-    i = findfirst(x -> abs(x) > _tol(v), v)
-    return isnothing(i) || v[i] > 0 ? v : -v
-end
-
-"""
-    TileCell{PF,S}
-
-One candidate cell of a lattice, kept as the meta-polyform the search grows it from.
-
-  - `meta`: the cell, `order` copies of the tiled polyform wrapped as one meta-polyform
-  - `sites`: its meta sites, in [`bindingsites`](@ref) order
-  - `spent`: which of those a translate can no longer use -- bound inside the cell, or inert
-  - `basecolors`: the color each meta site carries in the *underlying* rules, for naming bond types
-  - `order`: how many copies of the polyform the cell holds
-"""
-struct TileCell{PF,S}
-    meta::PF
-    sites::Vector{S}
-    spent::BitVector
-    basecolors::Vector{Int}
-    order::Int
-end
-
-# Everything the shell search threads around: the cell being translated, what it is searched
-# against, and the state of the current branch of the search.
-struct _ShellSearch{PF,P,S,R,V}
-    cell::TileCell{PF,S}
-    rules::R                           # the *meta* rules: the cell is translated as meta-particles
-    vectors::Vector{V}
-    ofvertex::Vector{Int}              # first vertex of a site -> its index in `cell.sites`, else 0
-    nreps::Int
-    consumed::BitVector                # which of `cell.sites` a bond has already closed
-    contacts::Vector{NTuple{2,Int}}    # bonds the placed shells have formed, as site indices
-    placed::Vector{Vector{P}}          # one shell of copies per chosen vector
-    chosen::Vector{Int}                # indices into `vectors`
-end
-
-# A contact comes back as the vertex range its site occupies, and a translated copy keeps the
-# ranges of the cell it was translated from, so the first vertex identifies the site. An array
-# rather than a `Dict`: the vertices are a contiguous range, so indexing is the whole lookup.
-function _siteofvertex(cell::TileCell)
-    ofvertex = zeros(Int, maximum(s -> last(s.vertices), cell.sites; init=0))
-    for (i, s) in enumerate(cell.sites)
-        ofvertex[first(s.vertices)] = i
-    end
-    return ofvertex
-end
-_lookup(s::_ShellSearch, vs) = first(vs) <= length(s.ofvertex) ? s.ofvertex[first(vs)] : 0
-
-function _addtilings!(out, cell::TileCell, metarules, rules, cellpoly, nreps::Integer)
-    free = [s for (i, s) in enumerate(cell.sites) if !cell.spent[i]]
-    isempty(free) && return out
-    vectors = _candidatelatticevectors(free, metarules)
-    isempty(vectors) && return out
-
-    search = _ShellSearch(
-        cell,
-        metarules,
-        vectors,
-        _siteofvertex(cell),
-        Int(nreps),
-        copy(cell.spent),
-        NTuple{2,Int}[],
-        Vector{eltype(cell.meta.particles)}[],
-        Int[],
-    )
-    # the bonds inside the cell count towards what it spends, alongside the ones its translates
-    # close. Both are named by the colors the sites carry in the underlying rules, not the meta
-    # ones, since a bond type indexes that system's bonds
-    inside = [(siteindex(cell.meta, a), siteindex(cell.meta, b)) for (a, b) in bonds(cell.meta)]
-    spent = [_bondtype(rules, cell.basecolors, c) for c in inside]
-    record!() = push!(
-        out,
-        Tiling(
-            cellpoly,
-            vectors[search.chosen],
-            vcat(spent, [_bondtype(rules, cell.basecolors, c) for c in search.contacts]),
-            all(search.consumed),
-            cell.order,
-        ),
-    )
-    _tilings!(record!, search, dimension(rules), 1)
-    return out
 end
 
 # The cells to try: every meta-polyform of up to `maxorder` copies of `poly` that the assembly
@@ -221,28 +130,172 @@ end
 # catch it either, since touching is not interpenetrating. Exposed, they are meta sites like any
 # other, the lift leaves them inert, and the rejection fires.
 function _tilecells(poly::Polyform, maxorder::Integer)
-    mp = MetaParticleSpecies(poly; exposeinert=true)
-    metarules = BindingRules(mp)
-    S = sitetype(metarules)
-    PF = typeof(Polyform(metarules))
-    cells = TileCell{PF,S}[]
+    metarules = BindingRules(MetaParticleSpecies(poly; exposeinert=true))
+    cells = typeof(Polyform(metarules))[]
     isempty(opensites(poly)) && return cells, metarules
 
-    ucolors = _underlyingcolors(mp)
     polyenum(metarules; maxsize=maxorder) do meta, _
-        sites = collect(bindingsites(meta))
-        # a translate can use a site that is unbound inside the cell and not inert; everything
-        # else is spent before the search starts, and a `complete` closure is one that uses up
-        # what is left
-        spent = trues(length(sites))
-        for l in opensites(meta)
-            spent[siteindex(meta, l)] = false
-        end
-        basecolors = [ucolors[k] for _ in meta.particles for k in 1:nsites(mp)]
-        push!(cells, TileCell(copy(meta), sites, spent, basecolors, nparticles(meta)))
+        push!(cells, copy(meta))
         return ACCEPT
     end
     return cells, metarules
+end
+
+# What every placement is measured against: the cell being translated, the candidate translations,
+# and what the cell brings to the search before a single copy is laid down.
+struct _ShellSearch{PF,R,V}
+    cell::PF                 # the candidate cell, as the meta-polyform it was grown as
+    rules::R                 # the *meta* rules: the cell is translated as meta-particles
+    vectors::Vector{V}
+    ofvertex::Vector{Int}    # first vertex of a site -> its index among the cell's, else 0
+    nreps::Int
+    spent::BitVector         # sites no translate can use: bound inside the cell, or inert
+end
+
+function _addtilings!(out, cell::Polyform, metarules, rules, cellpoly, nreps::Integer)
+    sites = collect(bindingsites(cell))
+    # a translate can use a site that is unbound inside the cell and not inert; everything else is
+    # spent before the search starts, and a `complete` closure is one that uses up what is left
+    spent = trues(length(sites))
+    for l in opensites(cell)
+        spent[siteindex(cell, l)] = false
+    end
+    free = [s for (i, s) in enumerate(sites) if !spent[i]]
+    isempty(free) && return out
+    vectors = _candidatelatticevectors(free, metarules)
+    isempty(vectors) && return out
+
+    search = _ShellSearch(cell, metarules, vectors, _siteofvertex(sites), Int(nreps), spent)
+    # the bonds inside the cell count towards what it spends, alongside the ones its translates
+    # close
+    basecolors = _basecolors(cell)
+    inside = [_bondtype(rules, basecolors, (siteindex(cell, a), siteindex(cell, b))) for (a, b) in bonds(cell)]
+    record!(chosen, consumed, contacts) = push!(
+        out,
+        Tiling(
+            cellpoly,
+            vectors[chosen],
+            vcat(inside, [_bondtype(rules, basecolors, c) for c in contacts]),
+            all(consumed),
+            nparticles(cell),
+        ),
+    )
+    _tilings!(record!, search, dimension(rules), Int[], 1)
+    return out
+end
+
+# Translations that lay an open site onto a compatible, already-aligned partner site. Both signs
+# appear (the site pair swaps), so the shell search only needs non-negative coefficients.
+function _candidatelatticevectors(sites, rules)
+    intmat = interactionmatrix(rules)
+    vecs = typeof(first(sites).pose.x)[]
+    for s1 in sites, s2 in sites
+        intmat[color(s1), color(s2)] || continue
+        isaligned(s1, s2) || continue
+        v = s1.pose.x - s2.pose.x
+        norm(v) < _tol(v) && continue
+        any(u -> u ≈ v, vecs) || push!(vecs, v)
+    end
+    return vecs
+end
+
+# Depth-first search over strictly growing vector index sets, recording every set that closes.
+# A set that fails cannot be rescued by adding a vector to it -- the added vector only lays down
+# more copies, and every objection is to a copy -- so a failure prunes the whole subtree.
+function _tilings!(record!::F, s::_ShellSearch, maxvecs::Integer, chosen::Vector{Int},
+    from::Integer) where {F}
+    length(chosen) == maxvecs && return
+    for idx in from:length(s.vectors)
+        push!(chosen, idx)
+        closure = _closure(s, chosen)
+        if closure !== nothing
+            record!(chosen, closure...)
+            _tilings!(record!, s, maxvecs, chosen, idx + 1)
+        end
+        pop!(chosen)
+    end
+    return
+end
+
+# Lay a copy of the cell at every lattice point `chosen` reaches within `nreps` shells, and read
+# off what the copies do: which of the cell's sites they close, and the bonds they form, as pairs
+# of site indices. `nothing` if the placement is no tiling at all -- copies overlap, a contact is
+# not a valid bond or does not join two sites of the cell, a site is closed twice, or one of the
+# chosen vectors buys no bond, which would only stack disconnected copies.
+function _closure(s::_ShellSearch, chosen::Vector{Int})
+    parts = s.cell.particles
+    consumed = copy(s.spent)
+    contacts = NTuple{2,Int}[]
+    bought = zeros(Int, length(chosen))
+    placed = eltype(parts)[]
+
+    # non-negative coefficients suffice: a vector and its negative are both candidates, so the
+    # opposite quadrants are searched as sets of their own
+    for m in Iterators.product(ntuple(_ -> 0:(s.nreps), length(chosen))...)
+        all(iszero, m) && continue
+        t = sum(m[i] * s.vectors[chosen[i]] for i in eachindex(chosen))
+        for part in parts
+            sp = part + t
+            first(_overlap_and_contacts(placed, sp, s.rules)) === true && return nothing
+            ov, cts = _overlap_and_contacts(parts, sp, s.rules)
+            ov && return nothing
+            for (; vs1, vs2) in cts
+                # both endpoints must be sites of the cell, each closed at most once
+                i1, i2 = _lookup(s, vs1), _lookup(s, vs2)
+                (i1 == 0 || i2 == 0) && return nothing
+                consumed[i1] && return nothing
+                consumed[i1] = true
+                if i2 != i1
+                    consumed[i2] && return nothing
+                    consumed[i2] = true
+                end
+                push!(contacts, (i1, i2))
+                # the copy is a translate along the last vector it moves on, so credit that one
+                bought[findlast(!iszero, m)] += 1
+            end
+            push!(placed, sp)
+        end
+    end
+    all(>(0), bought) || return nothing
+    return consumed, contacts
+end
+
+# A contact comes back as the vertex range its site occupies, and a translated copy keeps the
+# ranges of the cell it was translated from, so the first vertex identifies the site. An array
+# rather than a `Dict`: the vertices are a contiguous range, so indexing is the whole lookup.
+function _siteofvertex(sites)
+    ofvertex = zeros(Int, maximum(s -> last(s.vertices), sites; init=0))
+    for (i, s) in enumerate(sites)
+        ofvertex[first(s.vertices)] = i
+    end
+    return ofvertex
+end
+_lookup(s::_ShellSearch, vs) = first(vs) <= length(s.ofvertex) ? s.ofvertex[first(vs)] : 0
+
+# The color each of a cell's meta sites carries in the *underlying* rules, in `bindingsites`
+# order, for naming bond types: a bond type indexes the underlying system's bonds, not the meta
+# ones. Each particle contributes its species' colors, since it wears all of that species' sites.
+function _basecolors(cell::Polyform)
+    cols = map(_underlyingcolors, species(bindingrules(cell)))
+    return [c for part in cell.particles for c in cols[speciesindex(part)]]
+end
+
+# Every recorded contact joins two sites that interact -- `_overlap_and_contacts` refuses the
+# others before they reach here -- so their color pair is always in the bond list.
+function _bondtype(rules, basecolors, (i1, i2))
+    i = findfirst(==(minmax(basecolors[i1], basecolors[i2])), bonded_colors(rules))
+    isnothing(i) && error("Internal error: a recorded contact has no bond type. Please file an issue.")
+    return i
+end
+
+# spatial units are O(1), so use sqrt(eps) for absolute tolerance
+_tol(::AbstractVector{F}) where {F} = sqrt(eps(F))
+
+# A vector and its negative generate the same translations, so pick the one whose first
+# significant component is positive.
+function _orient(v::AbstractVector)
+    i = findfirst(x -> abs(x) > _tol(v), v)
+    return isnothing(i) || v[i] > 0 ? v : -v
 end
 
 """
@@ -369,6 +422,33 @@ function growthwitness(rules::BindingRules; maxlength::Integer=chainstatebound(r
     return nothing
 end
 
+"""
+    chainstatebound(rules::BindingRules)
+
+How long a chain of `rules` can get before it must repeat itself.
+
+What a chain can do next depends only on the species at its end, which of that species' sites
+carries the incoming bond, and with which phase — finitely many states. A longer chain visits one
+twice, and the stretch between the two visits is a cell that repeats forever, so searching past
+this length can find no periodic chain that a shorter one would have missed.
+"""
+function chainstatebound(rules::BindingRules)
+    total = 0
+    for i in 1:nspecies(rules)
+        ps = species(rules, i)
+        for k in 1:nsites(ps)
+            site = bindingsite(ps, k)
+            phases = 1
+            for loc in possible_attachments(rules, color(site))
+                mate = bindingsite(rules, loc)
+                phases = max(phases, _ndistincttwists(mate, site))
+            end
+            total += phases
+        end
+    end
+    return total
+end
+
 # Depth-first over directed chains, extending only at the particle last added, so the states seen
 # so far are exactly the chain read from its start.
 function _walkchain(poly::Polyform, states, maxlength)
@@ -447,33 +527,6 @@ function _screwpitch(g::Pose{D,F}) where {D,F}
     return axis, abs(pitch) > tol ? pitch : nothing
 end
 
-"""
-    chainstatebound(rules::BindingRules)
-
-How long a chain of `rules` can get before it must repeat itself.
-
-What a chain can do next depends only on the species at its end, which of that species' sites
-carries the incoming bond, and with which phase — finitely many states. A longer chain visits one
-twice, and the stretch between the two visits is a cell that repeats forever, so searching past
-this length can find no periodic chain that a shorter one would have missed.
-"""
-function chainstatebound(rules::BindingRules)
-    total = 0
-    for i in 1:nspecies(rules)
-        ps = species(rules, i)
-        for k in 1:nsites(ps)
-            site = bindingsite(ps, k)
-            phases = 1
-            for loc in possible_attachments(rules, color(site))
-                mate = bindingsite(rules, loc)
-                phases = max(phases, _ndistincttwists(mate, site))
-            end
-            total += phases
-        end
-    end
-    return total
-end
-
 # How many of a particle's sites are bonded; a chain's ends are the particles with at most one.
 function _bonddegree(poly::Polyform, part)
     rules = bindingrules(poly)
@@ -511,97 +564,4 @@ function _ischain(poly::Polyform)
     nbonds = sum(part -> _bonddegree(poly, part), poly.particles; init=0) ÷ 2
     return nbonds == nparticles(poly) - 1 &&
            all(part -> _bonddegree(poly, part) <= 2, poly.particles)
-end
-
-# Every recorded contact joins two sites that interact -- `_overlap_and_contacts` refuses the
-# others before they reach here -- so their color pair is always in the bond list.
-function _bondtype(rules, basecolors, (i1, i2))
-    i = findfirst(==(minmax(basecolors[i1], basecolors[i2])), bonded_colors(rules))
-    isnothing(i) && error("Internal error: a recorded contact has no bond type. Please file an issue.")
-    return i
-end
-
-# Translations that lay an open site onto a compatible, already-aligned partner site. Both signs
-# appear (the site pair swaps), so the shell search only needs non-negative coefficients.
-function _candidatelatticevectors(sites, rules)
-    intmat = interactionmatrix(rules)
-    vecs = typeof(first(sites).pose.x)[]
-    for s1 in sites, s2 in sites
-        intmat[color(s1), color(s2)] || continue
-        isaligned(s1, s2) || continue
-        v = s1.pose.x - s2.pose.x
-        norm(v) < _tol(v) && continue
-        any(u -> u ≈ v, vecs) || push!(vecs, v)
-    end
-    return vecs
-end
-
-# Depth-first search over strictly growing vector index sets: place the newest vector's shells,
-# record every consistent configuration, recurse, undo.
-function _tilings!(record!::F, s::_ShellSearch, maxvecs::Integer, from::Integer) where {F}
-    length(s.chosen) == maxvecs && return
-    for idx in from:length(s.vectors)
-        push!(s.chosen, idx)
-        n0 = length(s.contacts)
-        added = _placeshell!(s)
-        # a shell without a single bond only builds disconnected unions; skip it
-        if added !== nothing && length(s.contacts) > n0
-            record!()
-            _tilings!(record!, s, maxvecs, idx + 1)
-        end
-        if added !== nothing
-            foreach(i -> s.consumed[i] = false, added)
-            resize!(s.contacts, n0)
-            pop!(s.placed)
-        end
-        pop!(s.chosen)
-    end
-    return
-end
-
-# Place every copy whose coefficient on the newest vector is positive (earlier-vector shells were
-# placed by earlier stages). Returns the newly consumed site ranges, or `nothing` on an overlap,
-# an invalid or bound-site contact, or a doubly-consumed site — with all bookkeeping undone.
-# Returns the indices of the sites it consumed.
-function _placeshell!(s::_ShellSearch)
-    parts = s.cell.meta.particles
-    k = length(s.chosen)
-    n0 = length(s.contacts)
-    added = Int[]
-    shell = eltype(parts)[]
-    function fail()
-        foreach(i -> s.consumed[i] = false, added)
-        resize!(s.contacts, n0)
-        return nothing
-    end
-
-    for m in Iterators.product(ntuple(_ -> 0:(s.nreps), k - 1)..., 1:(s.nreps))
-        t = sum(m[i] * s.vectors[s.chosen[i]] for i in 1:k)
-        for part in parts
-            sp = part + t
-            for prior in s.placed
-                first(_overlap_and_contacts(prior, sp, s.rules)) === true && return fail()
-            end
-            first(_overlap_and_contacts(shell, sp, s.rules)) === true && return fail()
-            ov, cts = _overlap_and_contacts(parts, sp, s.rules)
-            ov && return fail()
-            for (; vs1, vs2) in cts
-                # both endpoints must be sites of the cell, each closed at most once
-                i1, i2 = _lookup(s, vs1), _lookup(s, vs2)
-                (i1 == 0 || i2 == 0) && return fail()
-                s.consumed[i1] && return fail()
-                s.consumed[i1] = true
-                push!(added, i1)
-                if i2 != i1
-                    s.consumed[i2] && return fail()
-                    s.consumed[i2] = true
-                    push!(added, i2)
-                end
-                push!(s.contacts, (i1, i2))
-            end
-            push!(shell, sp)
-        end
-    end
-    push!(s.placed, shell)
-    return added
 end
