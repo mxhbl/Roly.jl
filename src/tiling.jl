@@ -668,16 +668,15 @@ end
 
 # Lay a copy of the cell at every lattice point the chosen vectors put within reach of it, and
 # return the bonds the copies form with it, one [`Contact`](@ref) per bond. `nothing` if the
-# placement is no tiling at all -- copies overlap, a contact is not a valid bond or does not join
-# two sites of the cell, a site is claimed twice, or one of the chosen vectors buys no bond, which
-# would only stack disconnected copies.
+# placement is no tiling at all -- copies overlap, a site is claimed twice, or one of the chosen
+# vectors carries no bond, which would only stack disconnected copies.
 #
 # Only the cell is checked against, never one copy against another: copies at `t₁` and `t₂` sit
 # exactly as the cell and the copy at `t₂ - t₁` do, and that difference is itself a lattice point,
 # so it is either within reach and checked here or out of reach and unable to touch.
 function _closure(s::_ShellSearch, chosen::Vector{Int})
     parts = s.cell.particles
-    rules = bindingrules(s.cell)    # the *meta* rules: the cell is translated as meta-particles
+    metarules = bindingrules(s.cell)
     # what each of the cell's sites is bonded to, indexed by the vertex a site starts at, which is
     # how a contact names one. `-1` for a vertex no translate can use, being a site already bound
     # inside the cell, an inert one, or no site's first vertex at all; `0` for one still free. A
@@ -685,11 +684,13 @@ function _closure(s::_ShellSearch, chosen::Vector{Int})
     partner = fill(-1, s.nvertices)
     partner[s.free] .= 0
     contacts = Contact[]
-    bought = zeros(Int, length(chosen))
+    # whether each chosen vector carries a bond. A vector that carries none contributes only
+    # copies nothing holds on to, which is a disconnected union rather than a tiling
+    contributes = falses(length(chosen))
 
     for (coords, t) in _neighborcells(s, chosen)
         for part in parts
-            ov, cts = _overlap_and_contacts(parts, translate(part, t), rules)
+            ov, cts = _overlap_and_contacts(parts, translate(part, t), metarules)
             ov && return nothing
             for contact in cts
                 v1, v2 = first(contact.vs1), first(contact.vs2)
@@ -699,12 +700,14 @@ function _closure(s::_ShellSearch, chosen::Vector{Int})
                 (partner[v1] == 0 && partner[v2] == 0) || return nothing
                 partner[v1], partner[v2] = v2, v1
                 push!(contacts, contact)
-                # the copy is a translate along the last vector it moves on, so credit that one
-                bought[findlast(!iszero, coords)] += 1
+                # a copy is credited to the last vector it moves along, which sorts the copies
+                # among the chosen vectors without overlap or omission. Any such rule would do:
+                # what is being asked is only that no vector sits idle
+                contributes[findlast(!iszero, coords)] = true
             end
         end
     end
-    all(>(0), bought) || return nothing
+    all(contributes) || return nothing
     return contacts
 end
 
