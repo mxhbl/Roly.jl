@@ -61,7 +61,7 @@ Here the repeat is also a *tiling*: one particle whose open sites all close onto
 
 ```@example growth
 cell = first(polygen(square; maxsize=1))
-complete = filter(t -> t.complete, tilings(cell))
+complete = filter(t -> iscomplete(t), tilings(cell))
 first(complete)
 ```
 

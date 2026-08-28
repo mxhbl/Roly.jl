@@ -29,7 +29,7 @@ export ncolors, nspecies, nbonds, isinert, species
 public bonded_colors, bonded_sites, bonded_species, sitesofcolor, speciesofcolor
 
 # Polyforms
-export Polyform, ParticleSite, nparticles, bindingrules, composition, bonds
+export AbstractPolyform, Polyform, ParticleSite, nparticles, bindingrules, composition, bonds
 export exposedsites, opensites
 
 # The graph a polyform carries, and the vertices it is written in, are an implementation detail:
@@ -41,7 +41,8 @@ public canonbindingsite, canonbindingsites, rotationcenter
 # Environments
 export PolyformEnvironment, ParticleEnvironment, BondEnvironment
 export particleenvironments, bondenvironments, crop, rootenvironment
-export Tiling, tilings, isunitcell, tilelatticevectors, cantile, canchain, isunbounded, chainstatebound, growthwitness
+export Tiling, tilings, tilingenum, isunitcell, tilelatticevectors, cantile, canchain, isunbounded,
+       chainstatebound, growthwitness
 export unitcell, latticevectors, bondtypes, iscomplete, tilingorder
 
 # Enumeration

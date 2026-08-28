@@ -5,7 +5,7 @@
     chainmono = first(polygen(chainlike; maxsize=1))
     @test isunitcell(chainmono)
     @test length(tilelatticevectors(chainmono)) == 1
-    @test all(t.complete && t.bondtypes == [1] for t in tilings(chainmono))
+    @test all(iscomplete(t) && bondtypes(t) == [1] for t in tilings(chainmono))
 
     # the square-lattice monomer tiles the plane with two lattice vectors; partial closures along
     # a single axis (the infinite chains) are enumerated alongside the complete tilings
@@ -14,9 +14,9 @@
     @test isunitcell(sqmono)
     @test length(tilelatticevectors(sqmono)) == 2
     ts = tilings(sqmono)
-    @test count(t -> t.complete, ts) > 0
-    @test all(length(t.bondtypes) == 2 for t in ts if t.complete)
-    @test any(t -> !t.complete && length(t.bondtypes) == 1, ts)
+    @test count(t -> iscomplete(t), ts) > 0
+    @test all(length(bondtypes(t)) == 2 for t in ts if iscomplete(t))
+    @test any(t -> !iscomplete(t) && length(bondtypes(t)) == 1, ts)
 
     # a closed dimer has no open sites left to close and is not a unit cell
     dimerrules = BindingRules([1 1 2 1], UnitSquare)
@@ -84,8 +84,8 @@
 
     @testset "cells of several copies" begin
         # every closure above is a cell of one copy, and says so
-        @test all(t.order == 1 for t in tilings(chainmono))
-        @test all(t.order == 1 for t in tilings(sqmono; maxorder=1))
+        @test all(tilingorder(t) == 1 for t in tilings(chainmono))
+        @test all(tilingorder(t) == 1 for t in tilings(sqmono; maxorder=1))
 
         # site 1 binds site 2, a quarter turn, so no translation carries a single square onto a
         # bonded copy -- the cell has to hold two of them, related by that turn, and only
@@ -95,17 +95,17 @@
         @test isempty(tilings(mono; maxorder=1))
         turned = tilings(mono; maxorder=2)
         @test !isempty(turned)
-        @test all(t.order == 2 for t in turned)
+        @test all(tilingorder(t) == 2 for t in turned)
         # the bond joining the two copies belongs to the cell, so it is counted there
-        @test all(!isempty(t.bondtypes) for t in turned)
+        @test all(!isempty(bondtypes(t)) for t in turned)
 
         # a supercell of a tiling is still a tiling, so raising the bound only adds cells
         for k in 1:3
             ts = tilings(chainmono; maxorder=k)
-            @test sort(unique(t.order for t in ts)) == collect(1:k)
-            @test all(t.complete for t in ts)
+            @test sort(unique(tilingorder(t) for t in ts)) == collect(1:k)
+            @test all(iscomplete(t) for t in ts)
             # a cell of k copies closes k bonds
-            @test all(length(t.bondtypes) == t.order for t in ts)
+            @test all(length(bondtypes(t)) == tilingorder(t) for t in ts)
         end
     end
 
@@ -165,19 +165,19 @@
         @test length(tilelatticevectors(cubemono)) == 3
         cts = tilings(cubemono)
         # a complete tiling closes all three axes, each through the system's one bond type
-        complete = filter(t -> t.complete, cts)
+        complete = filter(t -> iscomplete(t), cts)
         @test !isempty(complete)
-        @test all(t -> length(t.vectors) == 3 && t.bondtypes == [1, 1, 1], complete)
+        @test all(t -> length(latticevectors(t)) == 3 && bondtypes(t) == [1, 1, 1], complete)
         # the partial closures come back alongside: a column with one vector, a sheet with two
-        @test sort(unique(length(t.vectors) for t in cts)) == [1, 2, 3]
-        @test all(!t.complete for t in cts if length(t.vectors) < 3)
-        @test all(t.order == 1 for t in cts)
+        @test sort(unique(length(latticevectors(t)) for t in cts)) == [1, 2, 3]
+        @test all(!iscomplete(t) for t in cts if length(latticevectors(t)) < 3)
+        @test all(tilingorder(t) == 1 for t in cts)
 
         # four inert sides leave one axis to close, and one vector closes it
         column = BindingRules([1 1 1 1], PolyhedronParticleSpecies(Cube(); colors=[1, 2, 2, 2, 2, 1]))
         colmono = first(polygen(column; maxsize=1))
         @test length(opensites(colmono)) == 2
-        @test all(t -> t.complete && length(t.vectors) == 1, tilings(colmono))
+        @test all(t -> iscomplete(t) && length(latticevectors(t)) == 1, tilings(colmono))
 
         # distinct colors do not stop a particle tiling. `_canonical_faces` starts two faces that
         # face each other at corresponding corners, so a bond between them turns the neighbour not
@@ -190,12 +190,12 @@
         opposites = [1 1 1 6; 1 2 1 5; 1 3 1 4]
         keyedcube = BindingRules(opposites, PolyhedronParticleSpecies(Cube()))
         @test pure(keyedcube)
-        kcube = filter(t -> t.complete, tilings(first(polygen(keyedcube; maxsize=1))))
+        kcube = filter(t -> iscomplete(t), tilings(first(polygen(keyedcube; maxsize=1))))
         @test !isempty(kcube)
         # the lattice is the three unit axes, and each bond type is spent once -- where the
         # one-color cube spends its single type three times
-        @test all(t -> sort(norm.(t.vectors)) ≈ [1, 1, 1], kcube)
-        @test all(t -> sort(t.bondtypes) == [1, 2, 3], kcube)
+        @test all(t -> sort(norm.(latticevectors(t))) ≈ [1, 1, 1], kcube)
+        @test all(t -> sort(bondtypes(t)) == [1, 2, 3], kcube)
         # and squaring the faces up costs nothing, since the turns it takes are whole steps of a
         # square face's own symmetry: a cube colored alike keeps its full group
         @test symmetrynumber(PolyhedronParticleSpecies(Cube(); colors=fill(1, 6))) == 24
@@ -235,13 +235,13 @@
         keyedpatches = BindingRules(opposites, keyed)
         @test allunique(color(bindingsite(keyed, i)) for i in 1:6)
         @test pure(keyedpatches)
-        kpatch = filter(t -> t.complete, tilings(first(polygen(keyedpatches; maxsize=1))))
+        kpatch = filter(t -> iscomplete(t), tilings(first(polygen(keyedpatches; maxsize=1))))
         @test !isempty(kpatch)
-        @test all(t -> sort(norm.(t.vectors)) ≈ [1, 1, 1], kpatch)
-        @test all(t -> sort(t.bondtypes) == [1, 2, 3], kpatch)
+        @test all(t -> sort(norm.(latticevectors(t))) ≈ [1, 1, 1], kpatch)
+        @test all(t -> sort(bondtypes(t)) == [1, 2, 3], kpatch)
 
         # supercells behave as they do in the plane
-        @test sort(unique(t.order for t in tilings(cubemono; maxorder=2))) == [1, 2]
+        @test sort(unique(tilingorder(t) for t in tilings(cubemono; maxorder=2))) == [1, 2]
         @test cantile(cubic; maxtilesize=1) !== nothing
         @test cantile(octa; maxtilesize=2) === nothing
     end

@@ -1,10 +1,17 @@
 """
+    AbstractPolyform{D}
+
+An aggregate of particles in `D` dimensions, connected at binding sites and represented by a directed graph.
+"""
+abstract type AbstractPolyform{D} end
+
+"""
     Polyform
 
 A `Polyform` is an aggregate of particles connected at binding
 sites, represented by a directed graph.
 """
-mutable struct Polyform{D,P<:Particle,S<:BindingRules,G<:AbstractNautyGraph}
+mutable struct Polyform{D,P<:Particle,S<:BindingRules,G<:AbstractNautyGraph} <: AbstractPolyform{D}
     graphrep::G
     sigma::Int
     canon2orig::Vector{Int}
@@ -81,70 +88,70 @@ Base.show(io::Core.IO, l::ParticleSite) = print(io, "ParticleSite(", l.particle,
 Base.isless(a::ParticleSite, b::ParticleSite) = (a.particle, a.site) < (b.particle, b.site)
 
 """
-    nparticles(p::Polyform)
+    nparticles(p::AbstractPolyform)
 
 Return the number of particles in `p`.
 """
-@inline nparticles(p::Polyform) = length(p.particles)
+@inline nparticles(p::AbstractPolyform) = length(p.particles)
 
 """
-    nsites(p::Polyform)
+    nsites(p::AbstractPolyform)
 
 Return the total number of binding sites across all particles in `p`, including bound sites.
 """
-@inline nsites(p::Polyform) = sum(prt -> nsites(prt, p.bindingrules), p.particles; init=0)
+@inline nsites(p::AbstractPolyform) = sum(prt -> nsites(prt, p.bindingrules), p.particles; init=0)
 
 """
-    bindingrules(p::Polyform)
+    bindingrules(p::AbstractPolyform)
 
 Return the `BindingRules` that `p` belongs to.
 """
-@inline bindingrules(p::Polyform) = p.bindingrules
+@inline bindingrules(p::AbstractPolyform) = p.bindingrules
 
 """
-    symmetrynumber(p::Polyform)
+    symmetrynumber(p::AbstractPolyform)
 
 Return the symmetry number of `p`, i.e. the size of its automorphism group.
 """
-@inline symmetrynumber(p::Polyform) = p.sigma
+@inline symmetrynumber(p::AbstractPolyform) = p.sigma
 
-@inline graphrep(p::Polyform) = p.graphrep
-@inline dimension(::Polyform{D}) where {D} = D
-@inline posetype(::Polyform{D,<:Particle{<:P}}) where {D,P} = P
+@inline graphrep(p::AbstractPolyform) = p.graphrep
+@inline dimension(::AbstractPolyform{D}) where {D} = D
+@inline posetype(p::AbstractPolyform) = posetype(bindingrules(p))
 @inline posetype(::Type{<:Polyform{D,<:Particle{<:P}}}) where {D,P} = P
-@inline numtype(p::Polyform) = eltype(posetype(p))
+@inline numtype(p::AbstractPolyform) = eltype(posetype(p))
 
 """
-    particletype(p::Polyform)
+    particletype(p::AbstractPolyform)
 
 The concrete `Particle` type of every particle in `p`, for sizing a container that holds them.
 """
-@inline particletype(::Polyform{D,P}) where {D,P} = P
+@inline particletype(p::AbstractPolyform) = particletype(bindingrules(p))
 
 """
-    sitetype(p::Polyform)
+    sitetype(p::AbstractPolyform)
 
 The concrete [`BindingSite`](@ref) type of every site of `p`, for sizing a container that holds
 them.
 """
-@inline sitetype(p::Polyform) = sitetype(bindingrules(p))
+@inline sitetype(p::AbstractPolyform) = sitetype(bindingrules(p))
 @inline numtype(::Type{<:Polyform{D,<:Particle{<:P}}}) where {D,P} = eltype(P)
 
 """
-    tocanon(p::Polyform, v::Integer)
+    tocanon(p::AbstractPolyform, v::Integer)
 
 Convert an original vertex index `v` (as stored in `Particle.leadingvertex` or
 `BindingSite.vertices`) to the corresponding canonical graph vertex index in `graphrep(p)`.
 """
-@inline tocanon(p::Polyform, v::Integer) = p.orig2canon[v]
+@inline tocanon(p::AbstractPolyform, v::Integer) = p.orig2canon[v]
 
 """
-    toorig(p::Polyform, v::Integer)
+    toorig(p::AbstractPolyform, v::Integer)
 
 Convert a canonical graph vertex index `v` (as returned by iterating `graphrep(p)`)
 to the corresponding stable original vertex index.
 """
-@inline toorig(p::Polyform, v::Integer) = p.canon2orig[v]
+@inline toorig(p::AbstractPolyform, v::Integer) = p.canon2orig[v]
 
 function _apply_perm!(poly::Polyform, perm)
     # `orig2canon` is rebuilt from the result three lines below, 
@@ -162,35 +169,35 @@ function _apply_perm!(poly::Polyform, perm)
     return nothing
 end
 
-@inline is_leadingvertex(p::Polyform, v::Integer) = any(pt -> pt.leadingvertex == v, p.particles)
+@inline is_leadingvertex(p::AbstractPolyform, v::Integer) = any(pt -> pt.leadingvertex == v, p.particles)
 
-@inline particles(p::Polyform, i::Integer) = p.particles[i]
+@inline particles(p::AbstractPolyform, i::Integer) = p.particles[i]
 
 # Look up the particle whose leadingvertex equals the original vertex v (O(n) scan).
-@inline function particle_from_leadingvertex(p::Polyform, v::Integer)
+@inline function particle_from_leadingvertex(p::AbstractPolyform, v::Integer)
     i = findfirst(pt -> pt.leadingvertex == v, p.particles)
     return isnothing(i) ? nothing : p.particles[i]
 end
 
 """
-    interior_edges(p::Polyform)
+    interior_edges(p::AbstractPolyform)
 
 Return a lazy iterator over the internal particle edges of `graphrep(p)`.
 """
-@inline interior_edges(p::Polyform) = _filter_edges(p, Val(false))
+@inline interior_edges(p::AbstractPolyform) = _filter_edges(p, Val(false))
 
 """
-    exterior_edges(p::Polyform)
+    exterior_edges(p::AbstractPolyform)
 
 Return a lazy iterator over the external edges of `graphrep(p)`, those joining two particles.
 
 A bond contributes *several* of these, one per vertex pair `contact_pairing` makes, so use
 [`bonds`](@ref) to iterate bonds.
 """
-@inline exterior_edges(p::Polyform) = (e for e in _filter_edges(p, Val(true)) if e.src < e.dst)
+@inline exterior_edges(p::AbstractPolyform) = (e for e in _filter_edges(p, Val(true)) if e.src < e.dst)
 
 """
-    _same_particle(p::Polyform, u::Integer, v::Integer; canonidxs)
+    _same_particle(p::AbstractPolyform, u::Integer, v::Integer; canonidxs)
 
 Return `true` if the graph vertices `u` and `v` belong to the same particle.
 
@@ -198,7 +205,7 @@ Return `true` if the graph vertices `u` and `v` belong to the same particle.
 say is a caller that has not thought about it, which is how a bond scan once read canonical
 indices as original ones and silently lost a class of environment.
 """
-@inline function _same_particle(p::Polyform, u::Integer, v::Integer; canonidxs::Bool)
+@inline function _same_particle(p::AbstractPolyform, u::Integer, v::Integer; canonidxs::Bool)
     # Each particle owns a contiguous block of original vertices starting at its leading vertex, so
     # `u` and `v` are split apart exactly when some leading vertex falls between them.
     canonidxs && ((u, v) = (toorig(p, u), toorig(p, v)))
@@ -207,7 +214,7 @@ indices as original ones and silently lost a class of environment.
 end
 
 # An edge is a bond exactly when its endpoints belong to different particles
-function _filter_edges(p::Polyform, ::Val{exterior}) where {exterior}
+function _filter_edges(p::AbstractPolyform, ::Val{exterior}) where {exterior}
     return Iterators.filter(edges(graphrep(p))) do (; src, dst)
         same = _same_particle(p, src, dst; canonidxs=true)
         return exterior ? !same : same
@@ -215,7 +222,7 @@ function _filter_edges(p::Polyform, ::Val{exterior}) where {exterior}
 end
 
 """
-    _isbound_vertex(p::Polyform, part::Particle, v::Integer; canonidxs)
+    _isbound_vertex(p::AbstractPolyform, part::Particle, v::Integer; canonidxs)
 
 Return `true` if the graph vertex `v` of particle `part` is bonded to another particle, i.e. if
 it has a neighbor outside `part`'s own block of vertices.
@@ -234,7 +241,7 @@ function _isbound_vertex(p::Polyform, part::Particle, v::Integer; canonidxs::Boo
 end
 
 """
-    bondindex(poly::Polyform, src::Integer, dst::Integer; canonidxs=true)
+    bondindex(poly::AbstractPolyform, src::Integer, dst::Integer; canonidxs=true)
 
 Return the index into `bonded_colors(bindingrules(poly))` for the bond between the graph
 vertices `src` and `dst`, or `nothing` if they don't form a valid bond type.
@@ -243,14 +250,25 @@ vertices `src` and `dst`, or `nothing` if they don't form a valid bond type.
 one that `graphrep(poly)` and its `edges` are in, and `false` for the stable original one that
 `BindingSite.vertices` and `Particle.leadingvertex` are in.
 """
-function bondindex(poly::Polyform, src::Integer, dst::Integer; canonidxs::Bool=true)
-    c1 = color(bindingsite(poly, _vertex_to_particle_site(poly, src; canonidxs)))
-    c2 = color(bindingsite(poly, _vertex_to_particle_site(poly, dst; canonidxs)))
+function bondindex(poly::AbstractPolyform, src::Integer, dst::Integer; canonidxs::Bool=true)
+    a = _vertex_to_particle_site(poly, src; canonidxs)
+    b = _vertex_to_particle_site(poly, dst; canonidxs)
+    return bondindex(poly, a, b)
+end
+
+"""
+    bondindex(poly::AbstractPolyform, a::ParticleSite, b::ParticleSite)
+
+Return the index into `bonded_colors(bindingrules(poly))` for a bond between the sites `a` and
+`b` of `poly`, or `nothing` if their colors form no valid bond type.
+"""
+function bondindex(poly::AbstractPolyform, a::ParticleSite, b::ParticleSite)
+    c1, c2 = color(bindingsite(poly, a)), color(bindingsite(poly, b))
     return findfirst(==(minmax(c1, c2)), bonded_colors(bindingrules(poly)))
 end
 
 # Map a graph vertex back to (particleindex, siteindex).
-function _vertex_to_particle_site(p::Polyform, v::Integer; canonidxs::Bool)
+function _vertex_to_particle_site(p::AbstractPolyform, v::Integer; canonidxs::Bool)
     rules = bindingrules(p)
     orig_v = canonidxs ? toorig(p, v) : v
     for (i, part) in enumerate(p.particles)
@@ -263,16 +281,16 @@ function _vertex_to_particle_site(p::Polyform, v::Integer; canonidxs::Bool)
 end
 
 """
-    bindingsite(p::Polyform, loc::ParticleSite)
+    bindingsite(p::AbstractPolyform, loc::ParticleSite)
 
 The binding site `loc` names: site `loc.site` of particle `loc.particle` of `p`.
 """
-@inline function bindingsite(p::Polyform, loc::ParticleSite)
+@inline function bindingsite(p::AbstractPolyform, loc::ParticleSite)
     return bindingsite(particles(p, loc.particle), bindingrules(p), loc.site)
 end
 
 """
-    bindingsite(p::Polyform, i::Integer)
+    bindingsite(p::AbstractPolyform, i::Integer)
 
 Return the `i`-th binding site of `p`, counting through `p`'s particles in the order they are
 stored and through each particle's own sites, exactly as on a [`ParticleSpecies`](@ref).
@@ -280,7 +298,7 @@ stored and through each particle's own sites, exactly as on a [`ParticleSpecies`
 The ordering depends on how `p` was assembled. Use [`canonbindingsite`](@ref) for iterating through
 binding sites in canonical order.
 """
-function bindingsite(p::Polyform, i::Integer)
+function bindingsite(p::AbstractPolyform, i::Integer)
     rules = bindingrules(p)
     k = 0
     for prtcl in p.particles
@@ -293,7 +311,7 @@ function bindingsite(p::Polyform, i::Integer)
 end
 
 """
-    bindingsites(p::Polyform)
+    bindingsites(p::AbstractPolyform)
 
 Return a lazy iterator over all binding sites of `p`, counting through `p`'s particles in the order they are
 stored and through each particle's own sites, exactly as on a [`ParticleSpecies`](@ref).
@@ -301,25 +319,25 @@ stored and through each particle's own sites, exactly as on a [`ParticleSpecies`
 The ordering depends on how `p` was assembled. Use [`canonbindingsite`](@ref) for iterating through
 binding sites in canonical order.
 """
-bindingsites(p::Polyform) = (bindingsite(p, i) for i in 1:nsites(p))
+bindingsites(p::AbstractPolyform) = (bindingsite(p, i) for i in 1:nsites(p))
 
 """
-    siteindex(p::Polyform, siteloc::ParticleSite)
+    siteindex(p::AbstractPolyform, siteloc::ParticleSite)
 
 Return the index `i` of site `siteloc`, inverting `bindingsite(p, i)`.
 """
-function siteindex(p::Polyform, siteloc::ParticleSite)
+function siteindex(p::AbstractPolyform, siteloc::ParticleSite)
     rules = bindingrules(p)
     return sum(nsites(p.particles[q], rules) for q in 1:(siteloc.particle - 1); init=0) + siteloc.site
 end
 
 """
-    canonbindingsite(p::Polyform, i::Integer)
+    canonbindingsite(p::AbstractPolyform, i::Integer)
 
 Return the `i`-th binding site of `p` in canonical order, which follows the canonical graph
 labeling and is therefore the same for any two isomorphic polyforms.
 """
-function canonbindingsite(p::Polyform, i::Integer)
+function canonbindingsite(p::AbstractPolyform, i::Integer)
     rules = bindingrules(p)
     k = 0
     for v in p.canon2orig
@@ -334,11 +352,11 @@ function canonbindingsite(p::Polyform, i::Integer)
 end
 
 """
-    canonbindingsites(p::Polyform)
+    canonbindingsites(p::AbstractPolyform)
 
 Return a lazy iterator over all binding sites of `p` in canonical order.
 """
-canonbindingsites(p::Polyform) = (canonbindingsite(p, i) for i in 1:nsites(p))
+canonbindingsites(p::AbstractPolyform) = (canonbindingsite(p, i) for i in 1:nsites(p))
 
 """
     rotationcenter(p::Polyform)
@@ -486,21 +504,37 @@ function bonds(p::Polyform)
 end
 
 """
-    nbonds(p::Polyform)
+    nbonds(p::AbstractPolyform)
 
 Return the number of bonds in `p`. Note that `nbonds(::BindingRules)` instead counts how many
 *kinds* of bond a set of rules allows.
 """
-nbonds(p::Polyform) = length(_bondedges(p))
+nbonds(p::AbstractPolyform) = count(Returns(true), bonds(p))
 
 """
-    composition(p::Polyform)
+    bondtypes(p::AbstractPolyform)
+
+Return the bond type of every bond of `p`, each one once, indexing `bonded_colors(bindingrules(p))`.
+
+For a [`Tiling`](@ref) these are the bonds of one cell of the infinite structure, the ones a
+translate closes counted alongside the ones inside the cell.
+"""
+function bondtypes(p::AbstractPolyform)
+    return map(bonds(p)) do (a, b)
+        i = bondindex(p, a, b)
+        isnothing(i) && error("Internal error: a bond has no bond type. Please file an issue.")
+        return i
+    end
+end
+
+"""
+    composition(p::AbstractPolyform)
 
 Return the composition vector of `p`: counts of each particle species (indices
 `1:nspecies(rules)`) followed by counts of each bond type (indices `nspecies+1:end`).
 Bond types are ordered as in `bonded_colors(bindingrules(p))`.
 """
-function composition(p::Polyform)
+function composition(p::AbstractPolyform)
     rules = bindingrules(p)
     ns = nspecies(rules)
     nb = nbonds(rules)
@@ -510,8 +544,8 @@ function composition(p::Polyform)
         comp[part.speciesindex] += 1
     end
 
-    for (; src, dst) in _bondedges(p)
-        i = bondindex(p, src, dst)
+    for (a, b) in bonds(p)
+        i = bondindex(p, a, b)
         isnothing(i) || (comp[ns + i] += 1)
     end
 
@@ -829,7 +863,7 @@ end
 
 # Walk the unbound binding sites of `poly` in canonical order, yielding each one's
 # `(particle, site)` location together with the site itself. The four accessors below project it.
-function _exposed(poly::Polyform)
+function _exposed(poly::AbstractPolyform)
     rules = bindingrules(poly)
     index = Dict(leadingvertex(p) => i for (i, p) in enumerate(poly.particles))
     out = Tuple{ParticleSite,sitetype(rules)}[]
@@ -846,7 +880,7 @@ function _exposed(poly::Polyform)
 end
 
 """
-    exposedsites(poly::Polyform)
+    exposedsites(poly::AbstractPolyform)
 
 The [`ParticleSite`](@ref) of every *unbound* binding site of `poly`, in canonical order.
 
@@ -860,17 +894,17 @@ the address but nothing gets the address back from a site.
 These are the sites a [`MetaParticleSpecies`](@ref) may expose. It exposes the open ones by
 default, and an inert one becomes usable simply by being named and given a live color.
 """
-exposedsites(poly::Polyform) = [l for (l, _) in _exposed(poly)]
+exposedsites(poly::AbstractPolyform) = [l for (l, _) in _exposed(poly)]
 
 """
-    opensites(poly::Polyform)
+    opensites(poly::AbstractPolyform)
 
 The [`ParticleSite`](@ref) of every binding site of `poly` a partner can still attach through:
 the unbound ones whose color some rule uses, in canonical order.
 
 See [`exposedsites`](@ref), which lists the inert ones too.
 """
-function opensites(poly::Polyform)
+function opensites(poly::AbstractPolyform)
     rules = bindingrules(poly)
     return [l for (l, s) in _exposed(poly) if !isinert(rules, color(s))]
 end
