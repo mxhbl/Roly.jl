@@ -654,8 +654,9 @@ function _tilings!(f::F, s::_ShellSearch, maxvecs::Integer, chosen::Vector{Int},
         # coordinate being meaningless without a unique representation; the condition it stands in
         # for is that the bonded translations generate the chosen lattice, which `_generates`
         # already tests, and which implies the connectedness `bought` was there to enforce.
-        B = reduce(hcat, s.vectors[chosen])
-        closure = rank(B; rtol=_tol(B)) == length(chosen) ? _closure(s, chosen) : nothing
+        basis = s.vectors[chosen]
+        B = reduce(hcat, basis)
+        closure = rank(B; rtol=_tol(B)) == length(chosen) ? _closure(s, basis) : nothing
         if closure !== nothing
             signal = f(closure)
             signal == BREAK && return BREAK
@@ -674,7 +675,7 @@ end
 # Only the cell is checked against, never one copy against another: copies at `t₁` and `t₂` sit
 # exactly as the cell and the copy at `t₂ - t₁` do, and that difference is itself a lattice point,
 # so it is either within reach and checked here or out of reach and unable to touch.
-function _closure(s::_ShellSearch, chosen::Vector{Int})
+function _closure(s::_ShellSearch, basis)
     parts = s.cell.particles
     metarules = bindingrules(s.cell)
     # what each of the cell's sites is bonded to, indexed by the vertex a site starts at, which is
@@ -686,9 +687,10 @@ function _closure(s::_ShellSearch, chosen::Vector{Int})
     contacts = Contact[]
     # whether each chosen vector carries a bond. A vector that carries none contributes only
     # copies nothing holds on to, which is a disconnected union rather than a tiling
-    contributes = falses(length(chosen))
+    contributes = falses(length(basis))
 
-    for (coords, t) in _neighborcells(s, chosen)
+    for coords in _neighborcells(s, basis)
+        t = sum(coords[i] * basis[i] for i in eachindex(basis))
         for part in parts
             ov, cts = _overlap_and_contacts(parts, translate(part, t), metarules)
             ov && return nothing
@@ -715,19 +717,19 @@ end
 # coefficients that reach it. A copy displaced by `t` can only meet the cell if `t` is no longer
 # than the cell's own extent along `t` plus what the particles at either end reach, so that is
 # where the shells stop -- no cutoff to choose, and nothing placed that could not matter.
-function _neighborcells(s::_ShellSearch, chosen::Vector{Int})
-    basis = s.vectors[chosen]
+function _neighborcells(s::_ShellSearch, basis)
     B = reduce(hcat, basis)
     # a vector no longer than the cell is wide has coefficients bounded by the dual basis, which
     # for independent columns is the left inverse
     dual = inv(B' * B) * B'
     bound = [floor(Int, s.span * norm(view(dual, i, :))) for i in eachindex(basis)]
 
-    out = Tuple{NTuple{length(chosen),Int},eltype(basis)}[]
+    out = SVector{length(basis),Int}[]
     for coords in Iterators.product(((-bound[i]):bound[i] for i in eachindex(basis))...)
-        all(iszero, coords) && continue
-        t = sum(coords[i] * basis[i] for i in eachindex(basis))
-        _withinreach(s, t) && push!(out, (coords, t))
+        # by symmetry, we dont need to look at the placements that start with a negative offset
+        lead = findfirst(!iszero, coords)
+        (isnothing(lead) || coords[lead] < 0) && continue
+        _withinreach(s, sum(coords[i] * basis[i] for i in eachindex(basis))) && push!(out, SVector(coords))
     end
     return out
 end
