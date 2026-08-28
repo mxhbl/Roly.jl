@@ -579,6 +579,7 @@ struct _ShellSearch{PF,V,F}
     nvertices::Int           # how many vertices the cell's graph has
     span::F                  # the widest the cell can be, whichever way it is measured
     radius::F                # how far past its center the widest particle reaches
+    maxvectors::Int          # how many translations a lattice of this dimension can need
 end
 
 # Every tiling one candidate cell admits, streamed to `f`.
@@ -603,7 +604,8 @@ function _ShellSearch(cell::Polyform)
     diameter = maximum(norm(p.pose.x - q.pose.x) for p in parts, q in parts)
     radius = maximum(bounding_radius(species(rules, speciesindex(p))) for p in parts)
     return _ShellSearch(
-        cell, vectors, [first(b.vertices) for b in free], nv(graphrep(cell)), diameter + 2radius, radius
+        cell, vectors, [first(b.vertices) for b in free], nv(graphrep(cell)),
+        diameter + 2radius, radius, dimension(rules),
     )
 end
 
@@ -613,7 +615,7 @@ end
 Walk the search, streaming the bonds of every closure it finds to `f` as a vector of
 [`Contact`](@ref)s, and returning the signal `f` stopped it with.
 """
-(s::_ShellSearch)(f::F) where {F} = _tilings!(f, s, dimension(bindingrules(s.cell)), Int[], 1)
+(s::_ShellSearch)(f::F) where {F} = _tilings!(f, s, Int[], 1)
 
 # Collect all translations between aligned and color-compatible `sites`
 function _candidatelatticevectors(sites, rules::BindingRules{D}) where {D}
@@ -633,10 +635,11 @@ end
 # A set that fails cannot be rescued by adding a vector to it -- the added vector only lays down
 # more copies, and every objection is to a copy -- so a failure prunes the whole subtree, as does
 # an `f` that rejects.
-function _tilings!(f::F, s::_ShellSearch, maxvecs::Integer, chosen::Vector{Int}, from::Integer) where {F}
-    length(chosen) == maxvecs && return ACCEPT
-    for idx in from:length(s.vectors)
-        push!(chosen, idx)
+function _tilings!(f::F, s::_ShellSearch, picked::Vector{Int}, next::Integer) where {F}
+    length(picked) == s.maxvectors && return ACCEPT
+    # only ever extending past the last one picked, so each set of translations is reached once
+    for idx in next:length(s.vectors)
+        push!(picked, idx)
         # a dependent set generates a lattice a smaller one already generates, and would lay two
         # copies on one point besides
         #
@@ -654,15 +657,15 @@ function _tilings!(f::F, s::_ShellSearch, maxvecs::Integer, chosen::Vector{Int},
         # coordinate being meaningless without a unique representation; the condition it stands in
         # for is that the bonded translations generate the chosen lattice, which `_generates`
         # already tests, and which implies the connectedness `bought` was there to enforce.
-        basis = s.vectors[chosen]
+        basis = s.vectors[picked]
         B = reduce(hcat, basis)
-        closure = rank(B; rtol=_tol(B)) == length(chosen) ? _closure(s, basis) : nothing
+        closure = rank(B; rtol=_tol(B)) == length(picked) ? _closure(s, basis) : nothing
         if closure !== nothing
             signal = f(closure)
             signal == BREAK && return BREAK
-            signal != REJECT && _tilings!(f, s, maxvecs, chosen, idx + 1) == BREAK && return BREAK
+            signal != REJECT && _tilings!(f, s, picked, idx + 1) == BREAK && return BREAK
         end
-        pop!(chosen)
+        pop!(picked)
     end
     return ACCEPT
 end
@@ -702,9 +705,12 @@ function _closure(s::_ShellSearch, basis)
                 (partner[v1] == 0 && partner[v2] == 0) || return nothing
                 partner[v1], partner[v2] = v2, v1
                 push!(contacts, contact)
-                # a copy is credited to the last vector it moves along, which sorts the copies
-                # among the chosen vectors without overlap or omission. Any such rule would do:
-                # what is being asked is only that no vector sits idle
+                # `coords` is where the copy sits, and so also the displacement between the two
+                # sites this bond joins -- the copy carries its sites with it. Crediting the last
+                # vector that displacement moves along sorts the bonds among the chosen vectors
+                # without overlap or omission, which is all that is needed to ask whether any of
+                # them sits idle. Which vector a mixed displacement is credited to is a
+                # convention, and the TODO in `_tilings!` is where it stops being one
                 contributes[findlast(!iszero, coords)] = true
             end
         end
