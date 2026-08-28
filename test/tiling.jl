@@ -120,7 +120,7 @@
     # only when the open sites happen to start at color 1. Two square species that do not:
     shifted = BindingRules([1 4 2 2; 2 1 1 3], UnitSquare)
     shiftedchain = polygen(shifted; maxsize=2)[end]
-    @test [color(bindingsite(shiftedchain, l)) for l in opensites(shiftedchain)] == [3, 5]
+    @test [color(bindingsite(shiftedchain, l)) for l in opensitelocs(shiftedchain)] == [3, 5]
     @test (3, 5) in Roly.bonded_colors(shifted)
     @test length(tilings(shiftedchain)) == 1
     # `canchain` goes through `tilings`, so it was blind to this system too, while
@@ -181,7 +181,7 @@
         # four inert sides leave one axis to close, and one vector closes it
         column = BindingRules([1 1 1 1], PolyhedronParticleSpecies(Cube(); colors=[1, 2, 2, 2, 2, 1]))
         colmono = first(polygen(column; maxsize=1))
-        @test length(opensites(colmono)) == 2
+        @test length(opensitelocs(colmono)) == 2
         @test all(t -> iscomplete(t) && length(latticevectors(t)) == 1, tilings(colmono))
 
         # distinct colors do not stop a particle tiling. `_canonical_faces` starts two faces that

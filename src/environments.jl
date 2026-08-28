@@ -178,7 +178,7 @@ function BondEnvironment(poly::Polyform, bond::Pair; depth::Integer, bufs=Enviro
     p1 == p2 && throw(ArgumentError("bond endpoints must be distinct particles"))
 
     dist = _particledists!(bufs, poly, (p1, p2); maxdepth=depth)
-    sitevertex(p, s) = first(bindingsite(poly, ParticleSite(p, s)).vertices)
+    sitevertex(p, s) = first(bindingsite(poly, ParticleSiteLoc(p, s)).vertices)
     hm, rootvertices = _envgraph(poly, dist, depth, (p1, p2),
         (sitevertex(p1, s1), sitevertex(p2, s2)))
     return PolyformEnvironment(hm, rootvertices, Int(depth), rules)
@@ -249,7 +249,7 @@ end
 
 mutable struct EnvironmentEnumAux{BS<:BindingSite,G<:AbstractNautyGraph}
     seen::Set{G}                              # offspring keys of the current parent
-    pairs::Vector{Tuple{BS,SpeciesSite}}   # attachments that stay within the ball
+    pairs::Vector{Tuple{BS,SpeciesSiteLoc}}   # attachments that stay within the ball
     bufs::EnvironmentBuffers
     depth::Int
 end
@@ -334,7 +334,7 @@ function particleenvironments(f, rules::BindingRules; depth::Integer, maxsize=In
     v₀ = EnvironmentState(rules)
     BS = sitetype(rules)
     G = typeof(graphrep(v₀.poly))
-    aux = EnvironmentEnumAux(Set{G}(), Tuple{BS,SpeciesSite}[], EnvironmentBuffers(), Int(depth))
+    aux = EnvironmentEnumAux(Set{G}(), Tuple{BS,SpeciesSiteLoc}[], EnvironmentBuffers(), Int(depth))
     lsbufs = EnvironmentBuffers()
     rsys = RSSystem((w, v) -> _lsenv!(w, v, lsbufs), _adjenv!, v₀;
         compare=(a, b) -> a.key == b.key, aux)

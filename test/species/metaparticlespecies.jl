@@ -1,12 +1,12 @@
 @testset "MetaParticleSpecies" begin
-    using Roly: setcolors!, opensites, overlap, polyform
+    using Roly: setcolors!, opensitelocs, overlap, polyform
     using Graphs: ne
 
     # one species chaining through opposite sites, so a dimer keeps one open end of each kind
     chainlike = BindingRules([1 1 1 3], UnitSquare)
     chainstrs = polygen(chainlike; maxsize=4)
     dimer = chainstrs[findfirst(s -> nparticles(s) == 2, chainstrs)]
-    open = [bindingsite(dimer, l) for l in opensites(dimer)]
+    open = [bindingsite(dimer, l) for l in opensitelocs(dimer)]
     @test length(open) == 2
 
     mp = MetaParticleSpecies(dimer)
@@ -31,7 +31,7 @@
         selfstrs = polygen(selfrules; maxsize=2)
         sym = selfstrs[findfirst(s -> nparticles(s) == 2, selfstrs)]
         @test symmetrynumber(sym) == 2
-        nopen = length(opensites(sym))
+        nopen = length(opensitelocs(sym))
         @test nopen == 2
 
         # the species inherits the polyform's symmetry exactly -- an encoding over the sites alone
@@ -58,29 +58,29 @@
 
     @testset "choosing which sites to expose" begin
         # every unbound site is offered, bound ones never are
-        @test length(exposedsites(dimer)) == 2 * nsites(UnitSquare) - 2
-        @test all(((p, k),) -> 1 <= p <= nparticles(dimer), exposedsites(dimer))
+        @test length(exposedsitelocs(dimer)) == 2 * nsites(UnitSquare) - 2
+        @test all(((p, k),) -> 1 <= p <= nparticles(dimer), exposedsitelocs(dimer))
         # the open ones are the non-inert ones, and are what the default exposes, in this order
-        @test length(opensites(dimer)) == length(open)
-        @test opensites(dimer) ==
-              filter(l -> !Roly.isinert(chainlike, color(bindingsite(dimer, l))), exposedsites(dimer))
+        @test length(opensitelocs(dimer)) == length(open)
+        @test opensitelocs(dimer) ==
+              filter(l -> !Roly.isinert(chainlike, color(bindingsite(dimer, l))), exposedsitelocs(dimer))
         @test [color(bindingsite(mp, i)) for i in 1:nsites(mp)] ==
-              [color(bindingsite(dimer, l)) for l in opensites(dimer)]
+              [color(bindingsite(dimer, l)) for l in opensitelocs(dimer)]
         # the two views agree site for site
-        @test [bindingsite(dimer, l) for l in exposedsites(dimer)] ==
-              [bindingsite(dimer.particles[p], chainlike, k) for (p, k) in exposedsites(dimer)]
+        @test [bindingsite(dimer, l) for l in exposedsitelocs(dimer)] ==
+              [bindingsite(dimer.particles[p], chainlike, k) for (p, k) in exposedsitelocs(dimer)]
 
         # a site that is inert inside the polyform becomes usable by being named and given a
         # colour the new rules speak
-        inert = setdiff(exposedsites(dimer), opensites(dimer))
+        inert = setdiff(exposedsitelocs(dimer), opensitelocs(dimer))
         @test !isempty(inert)
         activated = MetaParticleSpecies(dimer, inert[1:2]; colors=[1, 2])
         @test nsites(activated) == 2
         @test [color(bindingsite(activated, i)) for i in 1:2] == [1, 2]
         # and those sites really do bind under rules written over the new colors
         # `exposeinert` names the same set without spelling it out
-        @test nsites(MetaParticleSpecies(dimer; exposeinert=true)) == length(exposedsites(dimer))
-        @test nsites(MetaParticleSpecies(dimer)) == length(opensites(dimer))
+        @test nsites(MetaParticleSpecies(dimer; exposeinert=true)) == length(exposedsitelocs(dimer))
+        @test nsites(MetaParticleSpecies(dimer)) == length(opensitelocs(dimer))
 
         activerules = BindingRules([1 1 1 2], activated)
         @test [polyenum(activerules; maxsize=k)[1] for k in 1:3] == [1, 2, 3]
@@ -93,12 +93,12 @@
         @test nparticles(recast(activepair, projected)) == 2nparticles(dimer)
 
         # exposure order is the caller's
-        pair = opensites(dimer)
+        pair = opensitelocs(dimer)
         @test [color(bindingsite(MetaParticleSpecies(dimer, reverse(pair)), i)) for i in 1:2] ==
-              reverse([color(bindingsite(dimer, l)) for l in opensites(dimer)])
+              reverse([color(bindingsite(dimer, l)) for l in opensitelocs(dimer)])
 
-        bound = [ParticleSite(p, k) for p in 1:nparticles(dimer) for k in 1:nsites(UnitSquare)
-                 if ParticleSite(p, k) ∉ Set(exposedsites(dimer))]
+        bound = [ParticleSiteLoc(p, k) for p in 1:nparticles(dimer) for k in 1:nsites(UnitSquare)
+                 if ParticleSiteLoc(p, k) ∉ Set(exposedsitelocs(dimer))]
         @test length(bound) == 2
         @test_throws ArgumentError MetaParticleSpecies(dimer, bound[1:1])
         @test_throws ArgumentError MetaParticleSpecies(dimer, [(1, 99)])
@@ -114,7 +114,7 @@
         sym = let strs = polygen(selfrules; maxsize=2)
             strs[findfirst(s -> nparticles(s) == 2, strs)]
         end
-        live = opensites(sym)
+        live = opensitelocs(sym)
         @test length(live) == 2
         @test symmetrynumber(MetaParticleSpecies(sym, live)) == 2
         @test symmetrynumber(MetaParticleSpecies(sym, live[1:1])) == 1
@@ -145,7 +145,7 @@
         trimer = let strs = polygen(chain; maxsize=3)
             strs[findfirst(s -> nparticles(s) == 3, strs)]
         end
-        @test isempty(opensites(trimer))
+        @test isempty(opensitelocs(trimer))
         @test_throws ArgumentError MetaParticleSpecies(trimer)
 
     end
@@ -253,7 +253,7 @@
         end
         # a distinct color per exposed site, bonding only the given pairs
         function keyed(poly, pairing)
-            sites = [bindingsite(poly, l) for l in opensites(poly)]
+            sites = [bindingsite(poly, l) for l in opensitelocs(poly)]
             ps = MetaParticleSpecies(poly; colors=1:length(sites))
             pairs = pairing(sites)
             @test sort(collect(Iterators.flatten(pairs))) == 1:length(sites)
@@ -303,14 +303,14 @@
         ### two triangles make a rhombus, which tiles the plane the way a square does
         iamonds = BindingRules([1 1 1 1], PolygonParticleSpecies(3; colors=fill(1, 3)))
         rhombus = only(p for p in polygen(iamonds; maxsize=2) if nparticles(p) == 2)
-        @test length(opensites(rhombus)) == 4
+        @test length(opensitelocs(rhombus)) == 4
         # fixed polyominoes, https://oeis.org/A001168
         @test persize(keyed(rhombus, facing), 5) ==
               persize(BindingRules([1 1 1 3; 1 2 1 4], UnitSquare), 5) == [1, 2, 6, 19, 63]
 
         ### six triangles make a hexagon, which tiles like one under either coloring
         ring = only(p for p in polygen(iamonds; maxsize=6)
-                    if nparticles(p) == 6 && length(opensites(p)) == 6)
+                    if nparticles(p) == 6 && length(opensitelocs(p)) == 6)
         # a distinct color per site leaves the block no symmetry: fixed polyhexes,
         # https://oeis.org/A001207
         @test persize(keyed(ring, facing), 4) ==
@@ -330,7 +330,7 @@
         tri3, hex3 = Prism(3, 1.0; h=2.0), Prism(6, 1.0; h=2.0)
         prismrules(shp) = (s = sides(shp); BindingRules([1 first(s) 1 first(s)], sticky(shp, s)))
         ring3 = only(p for p in polygen(prismrules(tri3); maxsize=6)
-                     if nparticles(p) == 6 && length(opensites(p)) == 6)
+                     if nparticles(p) == 6 && length(opensitelocs(p)) == 6)
         mp3 = MetaParticleSpecies(ring3)
         @test nsites(mp3) == 6
         # the ring is as symmetric as the hexagonal prism it makes, D_6 of order 12
@@ -347,7 +347,7 @@
         ### a 2x2 block of squares, whose sides carry two sites each
         sqrules = BindingRules([1 1 1 3; 1 2 1 4], UnitSquare)
         block = only(p for p in polygen(sqrules; maxsize=4)
-                     if nparticles(p) == 4 && length(opensites(p)) == 8)
+                     if nparticles(p) == 4 && length(opensitelocs(p)) == 8)
         # keeping the colors it inherits lets a block meet its neighbour half a block over,
         # sharing one edge instead of two, which no single square can do
         loose = polygen(BindingRules(MetaParticleSpecies(block)); maxsize=2)
@@ -365,7 +365,7 @@
         for (m, f) in zip(loose, flatloose)
             @test nv(graphrep(f)) == nv(graphrep(m))
             # every vertex range a meta-site occupies is the range of a site of the recast polyform
-            recastranges = Set(bindingsite(f, ParticleSite(p, k)).vertices
+            recastranges = Set(bindingsite(f, ParticleSiteLoc(p, k)).vertices
                                for p in 1:nparticles(f) for k in 1:nsites(f.particles[p], sqrules))
             @test all(bindingsite(m, i).vertices in recastranges for i in 1:nsites(m))
             # each copy's first particle starts where that copy's own vertex block starts
@@ -477,7 +477,7 @@
         end
 
         # and so does exposing only one of the two
-        one = MetaParticleSpecies(sym, opensites(sym)[1:1])
+        one = MetaParticleSpecies(sym, opensitelocs(sym)[1:1])
         @test length(Roly.rotationgroup(one)) == symmetrynumber(one) == 1
     end
 

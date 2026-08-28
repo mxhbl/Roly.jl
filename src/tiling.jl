@@ -280,12 +280,12 @@ end
 """
     bonds(t::Tiling)
 
-Return a lazy iterator of the bonds of one cell of `t`, each one once, as [`ParticleSite`](@ref)
+Return a lazy iterator of the bonds of one cell of `t`, each one once, as [`ParticleSiteLoc`](@ref)
 pairs. The bonds a translate closes are listed alongside the ones inside the cell.
 """
 function bonds(t::Tiling)
-    seen = Set{NTuple{2,ParticleSite}}()
-    out = Pair{ParticleSite,ParticleSite}[]
+    seen = Set{NTuple{2,ParticleSiteLoc}}()
+    out = Pair{ParticleSiteLoc,ParticleSiteLoc}[]
     for (_, (u, v)) in _markers(t)
         key = minmax(_vertex_to_particle_site(t, u; canonidxs=false), _vertex_to_particle_site(t, v; canonidxs=false))
         key in seen && continue
@@ -333,7 +333,7 @@ Whether `t` leaves no open site: every site of every particle is closed, by a ne
 cell or by a translate. A tiling that is not complete closes along fewer directions than the
 space has, i.e. a 1d line in the 2d plane.
 """
-iscomplete(t::Tiling) = isempty(opensites(t))
+iscomplete(t::Tiling) = isempty(opensitelocs(t))
 
 """
     tilingorder(t::Tiling)
@@ -511,7 +511,7 @@ Each tiling is visited exactly once: a cell can close the same way along several
 vectors, and the repeats never reach `f`. Keyword arguments are as in [`tilings`](@ref).
 """
 function tilingenum(f::F, poly::Polyform; maxorder::Integer=1) where {F}
-    isempty(opensites(poly)) && return nothing
+    isempty(opensitelocs(poly)) && return nothing
     # `exposeinert=true` to catch overlaps of inert sites
     metarules = BindingRules(MetaParticleSpecies(poly; exposeinert=true))
 
@@ -584,7 +584,7 @@ function _celltilings(f::F, cell::Polyform, order::Integer) where {F}
     sites = collect(bindingsites(cell))
 
     spent = trues(length(sites)) # sites that are already used up
-    for l in opensites(cell)
+    for l in opensitelocs(cell)
         spent[siteindex(cell, l)] = false
     end
 

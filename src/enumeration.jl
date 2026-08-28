@@ -1,6 +1,6 @@
 mutable struct PolyformAux{BS<:BindingSite}
     seen::Set{NautyDiGraph}
-    attachments::Vector{Tuple{BS,SpeciesSite,Int}}
+    attachments::Vector{Tuple{BS,SpeciesSiteLoc,Int}}
 end
 Base.copy(polyaux::PolyformAux) = typeof(polyaux)(copy(polyaux.seen), copy(polyaux.attachments))
 
@@ -57,7 +57,7 @@ the underlying reverse search: `Finished` if the enumeration ran to completion, 
 function polyenum(f, rules::BindingRules; maxsize=Inf, maxstrs=Inf, kwargs...)
     v₀ = Polyform(rules)
     BS = sitetype(rules)
-    aux = PolyformAux{BS}(Set{NautyDiGraph}(), Tuple{BS,SpeciesSite,Int}[])
+    aux = PolyformAux{BS}(Set{NautyDiGraph}(), Tuple{BS,SpeciesSiteLoc,Int}[])
     rsys = RSSystem(ls!, adj!, v₀; aux)
 
     frs = isnothing(f) ? nothing : (v, _) -> f(v, nparticles(v))

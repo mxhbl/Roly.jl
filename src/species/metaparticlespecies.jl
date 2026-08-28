@@ -20,7 +20,7 @@ end
 
 Wrap `poly` as a particle species whose sites are the ones named by `sites`, given as `(particle, site)`
 pairs and exposed in that order. Without them every open non-inert site is exposed, in
-[`exposedsites`](@ref) order.
+[`exposedsitelocs`](@ref) order.
 
   - `colors`: one interaction color per exposed site; by default each keeps the color it has
     inside `poly`
@@ -30,7 +30,7 @@ Each site's `sitesym` and `locking` carry over from the polyform, while its `sta
 against the polyform by [`siteorbits`](@ref) and [`stabilizerorders`](@ref).
 """
 function MetaParticleSpecies(poly::Polyform; colors=nothing, exposeinert::Bool=false)
-    return MetaParticleSpecies(poly, exposeinert ? exposedsites(poly) : opensites(poly); colors)
+    return MetaParticleSpecies(poly, exposeinert ? exposedsitelocs(poly) : opensitelocs(poly); colors)
 end
 
 function MetaParticleSpecies(poly::Polyform{D}, sites; colors=nothing) where {D}
@@ -40,14 +40,14 @@ function MetaParticleSpecies(poly::Polyform{D}, sites; colors=nothing) where {D}
     n > 0 || throw(ArgumentError("a meta-species needs at least one exposed site"))
     allunique(picks) || throw(ArgumentError("`sites` names the same site twice"))
 
-    exposable = Set(exposedsites(poly))
+    exposable = Set(exposedsitelocs(poly))
     open = map(picks) do (p, k)
         1 <= p <= nparticles(poly) ||
             throw(ArgumentError("`poly` has $(nparticles(poly)) particles, so ($p, $k) is out of range"))
         part = poly.particles[p]
         1 <= k <= nsites(part, rules) ||
             throw(ArgumentError("particle $p has $(nsites(part, rules)) sites, so ($p, $k) is out of range"))
-        ParticleSite(p, k) in exposable || throw(
+        ParticleSiteLoc(p, k) in exposable || throw(
             ArgumentError(
                 "site ($p, $k) is bound inside the polyform; a bond already consumes it, so it cannot be exposed"
             ),

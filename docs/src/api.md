@@ -156,7 +156,7 @@ recast
 
 ```@docs
 BindingRules
-SpeciesSite
+SpeciesSiteLoc
 interactionmatrix
 nspecies
 nbonds
@@ -173,14 +173,14 @@ isinert
 ```@docs
 AbstractPolyform
 Polyform
-ParticleSite
+ParticleSiteLoc
 nparticles
 bindingrules
 composition
 canonbindingsite
 canonbindingsites
-exposedsites
-opensites
+exposedsitelocs
+opensitelocs
 rotationgroup(::Polyform)
 permutationgroup(::Polyform)
 bonds

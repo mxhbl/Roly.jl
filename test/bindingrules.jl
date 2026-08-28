@@ -37,22 +37,22 @@ using StaticArrays: SVector
     @test length(bsp) == 2
     @test all(==((1, 1)), bsp)
 
-    c1 = color(rules, SpeciesSite(1, 1))
-    c3 = color(rules, SpeciesSite(1, 3))
+    c1 = color(rules, SpeciesSiteLoc(1, 1))
+    c3 = color(rules, SpeciesSiteLoc(1, 3))
     @test imat[c1, c3]
-    @test sitesofcolor(rules, c1) == [SpeciesSite(1, 1)]
+    @test sitesofcolor(rules, c1) == [SpeciesSiteLoc(1, 1)]
     @test speciesofcolor(rules, c1) == 1
 
     @test !isinert(rules, c1)
-    @test !isinert(rules, SpeciesSite(1, 1))
+    @test !isinert(rules, SpeciesSiteLoc(1, 1))
 
-    @test possible_attachments(rules, c1) == [SpeciesSite(1, 3)]
-    @test possible_attachments(rules, c3) == [SpeciesSite(1, 1)]
+    @test possible_attachments(rules, c1) == [SpeciesSiteLoc(1, 3)]
+    @test possible_attachments(rules, c3) == [SpeciesSiteLoc(1, 1)]
 
     sys1bond = BindingRules([1 1 1 3], UnitSquare)
-    c2 = color(sys1bond, SpeciesSite(1, 2))
+    c2 = color(sys1bond, SpeciesSiteLoc(1, 2))
     @test isinert(sys1bond, c2)
-    @test isinert(sys1bond, SpeciesSite(1, 2))
+    @test isinert(sys1bond, SpeciesSiteLoc(1, 2))
 
     io = IOBuffer()
     show(io, rules)

@@ -1,7 +1,7 @@
 using Roly: Polyform, nparticles, nsites, bindingrules, symmetrynumber, dimension,
             bonds, bondindex, composition, interior_edges, exterior_edges, tocanon, toorig,
             BindingRules, UnitSquare, nbonds, raise!, lower!, bindingsites, graphrep,
-            opensites, collect_attachments, particle_from_leadingvertex,
+            opensitelocs, collect_attachments, particle_from_leadingvertex,
             PolygonParticleSpecies, species, polygen
 
 @testset "polyform" begin
@@ -58,7 +58,7 @@ using Roly: Polyform, nparticles, nsites, bindingrules, symmetrynumber, dimensio
 
     @test length(collect(bindingsites(mono))) == nsites(mono)
 
-    open_sites = opensites(mono)
+    open_sites = opensitelocs(mono)
     @test length(open_sites) == 4
 
     for v in eachindex(mono.canon2orig)

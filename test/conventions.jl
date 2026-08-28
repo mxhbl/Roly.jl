@@ -1,5 +1,5 @@
 @testset "API conventions" begin
-    using Roly: SpeciesSite, ParticleSite
+    using Roly: SpeciesSiteLoc, ParticleSiteLoc
 
     exported = [n for n in names(Roly) if Base.isexported(Roly, n)]
     # names Roly defines, as opposed to the handful it re-exports from Rotations and StaticArrays
@@ -31,26 +31,26 @@
     @test_throws UndefKeywordError Roly._vertex_to_particle_site(dimer, 1)
 
     # The two site addresses are different types, so neither can stand in for the other.
-    @test SpeciesSite(1, 2) != ParticleSite(1, 2)
-    @test !isa(SpeciesSite(1, 2), ParticleSite)
-    @test_throws MethodError color(rules, ParticleSite(1, 1))
-    @test_throws MethodError raise!(copy(dimer), bindingsite(dimer, first(opensites(dimer))), ParticleSite(1, 1))
+    @test SpeciesSiteLoc(1, 2) != ParticleSiteLoc(1, 2)
+    @test !isa(SpeciesSiteLoc(1, 2), ParticleSiteLoc)
+    @test_throws MethodError color(rules, ParticleSiteLoc(1, 1))
+    @test_throws MethodError raise!(copy(dimer), bindingsite(dimer, first(opensitelocs(dimer))), ParticleSiteLoc(1, 1))
     # but each still destructures like the pair it replaced
-    @test (SpeciesSite(3, 4)...,) == (3, 4)
-    @test (ParticleSite(3, 4)...,) == (3, 4)
+    @test (SpeciesSiteLoc(3, 4)...,) == (3, 4)
+    @test (ParticleSiteLoc(3, 4)...,) == (3, 4)
 
     # each address indexes the thing it names
-    @test bindingsite(dimer, ParticleSite(1, 1)) == bindingsite(dimer.particles[1], rules, 1)
-    @test bindingsite(rules, SpeciesSite(1, 3)) == bindingsite(Roly.species(rules, 1), 3)
-    @test_throws MethodError bindingsite(dimer, SpeciesSite(1, 1))
-    @test_throws MethodError bindingsite(rules, ParticleSite(1, 1))
+    @test bindingsite(dimer, ParticleSiteLoc(1, 1)) == bindingsite(dimer.particles[1], rules, 1)
+    @test bindingsite(rules, SpeciesSiteLoc(1, 3)) == bindingsite(Roly.species(rules, 1), 3)
+    @test_throws MethodError bindingsite(dimer, SpeciesSiteLoc(1, 1))
+    @test_throws MethodError bindingsite(rules, ParticleSiteLoc(1, 1))
 
-    # `bonds` speaks ParticleSite, the rules speak SpeciesSite
-    @test eltype(collect(bonds(dimer))) == Pair{ParticleSite,ParticleSite}
+    # `bonds` speaks ParticleSiteLoc, the rules speak SpeciesSiteLoc
+    @test eltype(collect(bonds(dimer))) == Pair{ParticleSiteLoc,ParticleSiteLoc}
     # the site accessors return addresses; the site itself is one index away
-    @test eltype(opensites(dimer)) == ParticleSite
-    @test eltype(exposedsites(dimer)) == ParticleSite
-    @test opensites(dimer) ⊆ exposedsites(dimer)
-    @test all(l -> bindingsite(dimer, l) isa BindingSite, exposedsites(dimer))
-    @test eltype(Roly.possible_attachments(rules, 1)) == SpeciesSite
+    @test eltype(opensitelocs(dimer)) == ParticleSiteLoc
+    @test eltype(exposedsitelocs(dimer)) == ParticleSiteLoc
+    @test opensitelocs(dimer) ⊆ exposedsitelocs(dimer)
+    @test all(l -> bindingsite(dimer, l) isa BindingSite, exposedsitelocs(dimer))
+    @test eltype(Roly.possible_attachments(rules, 1)) == SpeciesSiteLoc
 end

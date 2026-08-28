@@ -12,7 +12,7 @@
 """
     _metasites(spcs::MetaParticleSpecies, speciesindex, rules, sitecolor)
 
-Return `(speciesindex, exposed)`, where `exposed` maps the [`ParticleSite`](@ref) of each site
+Return `(speciesindex, exposed)`, where `exposed` maps the [`ParticleSiteLoc`](@ref) of each site
 `spcs` exposes to the color it should be drawn in.
 
 The colors come from [`_resolve_colors`](@ref) on the meta-species itself, so they follow the
@@ -28,7 +28,7 @@ function _metasites(spcs::MetaParticleSpecies, speciesindex, rules, sitecolor)
     # Match the species' sites back to the polyform's by vertex range, not by `==`: a recolored
     # site is no longer equal to the one it was taken from.
     poly = polyform(spcs)
-    byvertex = Dict(first(bindingsite(poly, l).vertices) => l for l in exposedsites(poly))
+    byvertex = Dict(first(bindingsite(poly, l).vertices) => l for l in exposedsitelocs(poly))
     exposed = Dict(byvertex[first(bindingsite(spcs, i).vertices)] => colors[i] for i in 1:nsites(spcs))
     return si, exposed
 end
@@ -47,7 +47,7 @@ function _metaparts(spcs::MetaParticleSpecies, pose, speciesindex, rules, siteco
             species(inner, part.speciesindex),
             pose * part.pose,
             part.speciesindex,
-            (_, k) -> get(exposed, ParticleSite(p, k), wash),
+            (_, k) -> get(exposed, ParticleSiteLoc(p, k), wash),
         ) for (p, part) in enumerate(poly.particles)
     ]
 end

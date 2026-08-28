@@ -40,12 +40,12 @@
     # its exposed sites keep their colors; everything else is one wash of the species color
     si, exposed = ext._metasites(mp, nothing, nothing, nothing)
     @test length(exposed) == nsites(mp)
-    @test Set(keys(exposed)) == Set(Roly.opensites(metaseed))
+    @test Set(keys(exposed)) == Set(Roly.opensitelocs(metaseed))
     parts = ext._metaparts(mp, Roly.Pose{3,Float64}(), nothing, nothing, nothing, nothing)
     @test length(parts) == nparticles(metaseed)
     wash = ext.RGBf(ext.INERT_COLOR)
     for (p, (_, _, _, sitecolor)) in enumerate(parts), k in 1:nsites(cube)
-        want = get(exposed, ParticleSite(p, k), wash)
+        want = get(exposed, ParticleSiteLoc(p, k), wash)
         @test sitecolor(0, k) == want
     end
     # every exposed color stays clear of the interior one. A species palette ramps from pale to
@@ -55,7 +55,7 @@
     @test minimum(apart(c, wash) for c in values(exposed)) > 0.25
 
     # the sites a bond inside the cluster consumes are exactly the washed ones
-    @test count(((p, k),) -> get(exposed, ParticleSite(p, k), wash) == wash,
+    @test count(((p, k),) -> get(exposed, ParticleSiteLoc(p, k), wash) == wash,
                 [(p, k) for p in 1:nparticles(metaseed) for k in 1:nsites(cube)]) ==
           nparticles(metaseed) * nsites(cube) - nsites(mp)
 
@@ -64,7 +64,7 @@
     # sharing its color live -- colors are the whole interface to the rules.
     onebond = BindingRules([1 1 1 2], mp)
     _, inertexposed = ext._metasites(mp, 1, onebond, nothing)
-    inertcount = count(i -> Roly.isinert(onebond, SpeciesSite(1, i)), 1:nsites(mp))
+    inertcount = count(i -> Roly.isinert(onebond, SpeciesSiteLoc(1, i)), 1:nsites(mp))
     @test 0 < inertcount < nsites(mp)
     @test count(==(ext.INERT_COLOR), values(inertexposed)) == inertcount
 

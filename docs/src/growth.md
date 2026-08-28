@@ -32,7 +32,7 @@ Four structures, and the largest closes into a ring with no open site left.
 ```@example growth
 polys = polygen(ring)
 biggest = polys[argmax(nparticles.(polys))]
-nparticles(biggest), nbonds(biggest), length(opensites(biggest))
+nparticles(biggest), nbonds(biggest), length(opensitelocs(biggest))
 ```
 
 ```@example growth

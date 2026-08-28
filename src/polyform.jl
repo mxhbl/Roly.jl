@@ -83,26 +83,26 @@ Base.show(io::Core.IO, ::Type{Polyform{D}}) where {D} = print(io, "Polyform{$D}"
 Base.:(==)(p1::Polyform, p2::Polyform) = bindingrules(p1) === bindingrules(p2) && graphrep(p1) == graphrep(p2)
 
 """
-    ParticleSite(particle, site)
+    ParticleSiteLoc(particle, site)
 
 Which binding site of which particle inside a [`Polyform`](@ref): where a site actually is in an
 assembled structure.
 
-Distinct from [`SpeciesSite`](@ref), which names a site of a *species* and is what a set of
+Distinct from [`SpeciesSiteLoc`](@ref), which names a site of a *species* and is what a set of
 [`BindingRules`](@ref) speaks in. Both were `NTuple{2,Int}` once.
 
 Iterates and indexes like the pair it replaces, so `(p, k) = ps` still works.
 """
-struct ParticleSite
+struct ParticleSiteLoc
     particle::Int
     site::Int
 end
 
-Base.iterate(l::ParticleSite, i::Int=1) = i > 2 ? nothing : (getfield(l, i), i + 1)
-Base.length(::ParticleSite) = 2
-Base.getindex(l::ParticleSite, i::Integer) = getfield(l, Int(i))
-Base.show(io::Core.IO, l::ParticleSite) = print(io, "ParticleSite(", l.particle, ", ", l.site, ")")
-Base.isless(a::ParticleSite, b::ParticleSite) = (a.particle, a.site) < (b.particle, b.site)
+Base.iterate(l::ParticleSiteLoc, i::Int=1) = i > 2 ? nothing : (getfield(l, i), i + 1)
+Base.length(::ParticleSiteLoc) = 2
+Base.getindex(l::ParticleSiteLoc, i::Integer) = getfield(l, Int(i))
+Base.show(io::Core.IO, l::ParticleSiteLoc) = print(io, "ParticleSiteLoc(", l.particle, ", ", l.site, ")")
+Base.isless(a::ParticleSiteLoc, b::ParticleSiteLoc) = (a.particle, a.site) < (b.particle, b.site)
 
 """
     nparticles(p::AbstractPolyform)
@@ -274,12 +274,12 @@ function bondindex(poly::AbstractPolyform, src::Integer, dst::Integer; canonidxs
 end
 
 """
-    bondindex(poly::AbstractPolyform, a::ParticleSite, b::ParticleSite)
+    bondindex(poly::AbstractPolyform, a::ParticleSiteLoc, b::ParticleSiteLoc)
 
 Return the index into `bonded_colors(bindingrules(poly))` for a bond between the sites `a` and
 `b` of `poly`, or `nothing` if their colors form no valid bond type.
 """
-function bondindex(poly::AbstractPolyform, a::ParticleSite, b::ParticleSite)
+function bondindex(poly::AbstractPolyform, a::ParticleSiteLoc, b::ParticleSiteLoc)
     c1, c2 = color(bindingsite(poly, a)), color(bindingsite(poly, b))
     return findfirst(==(minmax(c1, c2)), bonded_colors(bindingrules(poly)))
 end
@@ -291,18 +291,18 @@ function _vertex_to_particle_site(p::AbstractPolyform, v::Integer; canonidxs::Bo
     for (i, part) in enumerate(p.particles)
         orig_v in graphvertices(part, rules) || continue
         for j in 1:nsites(part, rules)
-            orig_v in bindingsite(part, rules, j).vertices && return ParticleSite(i, j)
+            orig_v in bindingsite(part, rules, j).vertices && return ParticleSiteLoc(i, j)
         end
     end
     return nothing
 end
 
 """
-    bindingsite(p::AbstractPolyform, loc::ParticleSite)
+    bindingsite(p::AbstractPolyform, loc::ParticleSiteLoc)
 
 The binding site `loc` names: site `loc.site` of particle `loc.particle` of `p`.
 """
-@inline function bindingsite(p::AbstractPolyform, loc::ParticleSite)
+@inline function bindingsite(p::AbstractPolyform, loc::ParticleSiteLoc)
     return bindingsite(particles(p, loc.particle), bindingrules(p), loc.site)
 end
 
@@ -339,11 +339,11 @@ binding sites in canonical order.
 bindingsites(p::AbstractPolyform) = (bindingsite(p, i) for i in 1:nsites(p))
 
 """
-    siteindex(p::AbstractPolyform, siteloc::ParticleSite)
+    siteindex(p::AbstractPolyform, siteloc::ParticleSiteLoc)
 
 Return the index `i` of site `siteloc`, inverting `bindingsite(p, i)`.
 """
-function siteindex(p::AbstractPolyform, siteloc::ParticleSite)
+function siteindex(p::AbstractPolyform, siteloc::ParticleSiteLoc)
     rules = bindingrules(p)
     return sum(nsites(p.particles[q], rules) for q in 1:(siteloc.particle - 1); init=0) + siteloc.site
 end
@@ -496,7 +496,7 @@ vertices, so a bond between two dart-encoded faces reaches `graphrep(p)` as seve
 sites are joined by at most one bond, so the pair of sites an edge lands on names the bond.
 """
 function _bondedges(p::Polyform)
-    seen = Set{NTuple{2,ParticleSite}}()
+    seen = Set{NTuple{2,ParticleSiteLoc}}()
     return filter(collect(exterior_edges(p))) do (; src, dst)
         key = minmax(_vertex_to_particle_site(p, src; canonidxs=true),
                      _vertex_to_particle_site(p, dst; canonidxs=true))
@@ -509,7 +509,7 @@ end
 """
     bonds(p::Polyform)
 
-Return a lazy iterator of bonds in `p`, each one once, as [`ParticleSite`](@ref) pairs.
+Return a lazy iterator of bonds in `p`, each one once, as [`ParticleSiteLoc`](@ref) pairs.
 """
 function bonds(p::Polyform)
     return (
@@ -570,14 +570,14 @@ function composition(p::AbstractPolyform)
 end
 
 """
-    raise!(poly::Polyform, site::BindingSite, loc::SpeciesSite, t=0)
+    raise!(poly::Polyform, site::BindingSite, loc::SpeciesSiteLoc, t=0)
 
 Attach a new particle to `poly` at the open binding site `site`, with the species and site index given by `loc`,
 in twist `t` of the bond (see [`standard_twist`](@ref)).
 
 Returns `poly` on success, or `missing` if the attachment is geometrically forbidden (overlap or misaligned contact).
 """
-function raise!(poly::Polyform, site::BindingSite, loc::SpeciesSite, t::Integer=0; kwargs...)
+function raise!(poly::Polyform, site::BindingSite, loc::SpeciesSiteLoc, t::Integer=0; kwargs...)
     rules = bindingrules(poly)
     particle_species = species(rules, loc.species)
     leadingvertex = nv(graphrep(poly)) + 1
@@ -883,45 +883,46 @@ end
 function _exposed(poly::AbstractPolyform)
     rules = bindingrules(poly)
     index = Dict(leadingvertex(p) => i for (i, p) in enumerate(poly.particles))
-    out = Tuple{ParticleSite,sitetype(rules)}[]
+    out = Tuple{ParticleSiteLoc,sitetype(rules)}[]
     for orig_v in poly.canon2orig
         part = particle_from_leadingvertex(poly, orig_v)
         isnothing(part) && continue
         for k in 1:nsites(part, rules)
             s = bindingsite(part, rules, k)
             _isbound_vertex(poly, part, first(s.vertices); canonidxs=false) && continue
-            push!(out, (ParticleSite(index[leadingvertex(part)], k), s))
+            push!(out, (ParticleSiteLoc(index[leadingvertex(part)], k), s))
         end
     end
     return out
 end
 
 """
-    exposedsites(poly::AbstractPolyform)
+    exposedsitelocs(poly::AbstractPolyform)
 
-The [`ParticleSite`](@ref) of every *unbound* binding site of `poly`, in canonical order.
+The [`ParticleSiteLoc`](@ref) of every *unbound* binding site of `poly`, in canonical order.
 
 Bound sites are consumed by the bonds holding `poly` together and are never listed. Sites whose
 color takes part in no rule are listed, even though nothing can attach through them as `poly`
-stands; [`opensites`](@ref) is this list without them.
+stands; [`opensitelocs`](@ref) is this list without them.
 
-Addresses rather than the sites themselves, since `bindingsite(poly, loc)` gets the site from
-the address but nothing gets the address back from a site.
+Addresses rather than the sites themselves, since `bindingsite(poly, loc)` gets the site from the
+address but nothing gets the address back from a site. A name ending in `sites` yields
+[`BindingSite`](@ref)s and one ending in `sitelocs` yields addresses, throughout.
 
 These are the sites a [`MetaParticleSpecies`](@ref) may expose. It exposes the open ones by
 default, and an inert one becomes usable simply by being named and given a live color.
 """
-exposedsites(poly::AbstractPolyform) = [l for (l, _) in _exposed(poly)]
+exposedsitelocs(poly::AbstractPolyform) = [l for (l, _) in _exposed(poly)]
 
 """
-    opensites(poly::AbstractPolyform)
+    opensitelocs(poly::AbstractPolyform)
 
-The [`ParticleSite`](@ref) of every binding site of `poly` a partner can still attach through:
+The [`ParticleSiteLoc`](@ref) of every binding site of `poly` a partner can still attach through:
 the unbound ones whose color some rule uses, in canonical order.
 
-See [`exposedsites`](@ref), which lists the inert ones too.
+See [`exposedsitelocs`](@ref), which lists the inert ones too.
 """
-function opensites(poly::AbstractPolyform)
+function opensitelocs(poly::AbstractPolyform)
     rules = bindingrules(poly)
     return [l for (l, s) in _exposed(poly) if !isinert(rules, color(s))]
 end
@@ -1020,5 +1021,5 @@ See [`collect_attachments!`](@ref).
 function collect_attachments(poly::Polyform)
     rules = bindingrules(poly)
     BS = sitetype(rules)
-    return collect_attachments!(Tuple{BS,SpeciesSite,Int}[], poly)
+    return collect_attachments!(Tuple{BS,SpeciesSiteLoc,Int}[], poly)
 end
