@@ -521,10 +521,11 @@ Return the periodic closures of `poly`: choices of up to `dimension` translation
 which copies of a cell form valid bonds with each other and never overlap, each vector
 contributing at least one bond.
 
-  - `nreps`: neighbor shells placed and checked per vector.
-  - `maxorder`: let a cell hold up to `maxorder` copies of `poly`, grown as a meta-polyform and
-    then checked for translation tilings. Above 1 this reaches tilings in which `poly` appears in
-    rotated configuraitons.
+  - `nreps`: neighbor shells placed and checked, either way along each vector.
+  - `maxorder`: how many copies of `poly` a cell may be *searched* at, grown as a meta-polyform
+    and then checked for translation tilings. Above 1 this reaches tilings in which `poly` appears
+    in rotated configurations. It does not describe what comes back, since a tiling is always
+    reported by its irreducible cell.
   - returns a vector of [`Tiling`](@ref)
 
 Candidate vectors connect interacting, aligned pairs of open sites, so a closure that needs a
