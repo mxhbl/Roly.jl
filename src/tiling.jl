@@ -3,18 +3,6 @@
 
 A periodic structure: particles bonded to each other and to their own translates under a lattice
 of rank at most `D`. Returned by [`tilings`](@ref).
-
-An [`AbstractPolyform`](@ref) like [`Polyform`](@ref), and read the same way -- [`bonds`](@ref),
-[`bondtypes`](@ref), [`composition`](@ref) and [`opensites`](@ref) all speak about one cell of the
-infinite structure. The two differ in what an edge of the graph means: in a polyform it joins two
-particles that sit side by side, in a tiling it may instead join a particle to a translate of one,
-so a polyform is the tiling whose lattice is trivial.
-
-The particles are one cell's worth, and which cell that is carries no meaning: cutting the same
-structure along different lattice translations gives the same graph, and two tilings are equal
-exactly when their graphs are. [`latticevectors`](@ref) is a basis of the lattice the graph
-implies, kept because a basis is what its readers want and the search already has one, and left
-out of the identity for the same reason the cell is.
 """
 struct Tiling{D,P<:Particle,S<:BindingRules,G<:AbstractNautyGraph,V} <: AbstractPolyform{D}
     graphrep::G
@@ -639,6 +627,21 @@ function _tilings!(f::F, s::_ShellSearch, maxvecs::Integer, chosen::Vector{Int},
         push!(chosen, idx)
         # a dependent set generates a lattice a smaller one already generates, and would lay two
         # copies on one point besides
+        #
+        # TODO: this is where the search is incomplete. A lattice's generating sets are not all
+        # independent, and refusing the dependent ones refuses tilings. In one dimension a cell
+        # bonded to the copies two and three periods away, and to neither one period away, repeats
+        # under a lattice that `{2v, 3v}` generates and no single candidate does, so we build the
+        # tilings of `⟨2v⟩` and `⟨3v⟩` and miss the one that has both bonds. It takes a cell
+        # reaching past its own nearest neighbor, so nothing we have run produces it.
+        #
+        # The fix is to try generating sets of any size, not just independent ones of size `rank`:
+        # the candidates number a handful, so all subsets is cheap. Lattice points then have to be
+        # deduplicated before placement, since a dependent set reaches one point several ways --
+        # which is what used to look like an overlap. And `bought` has to go, attribution to a
+        # coordinate being meaningless without a unique representation; the condition it stands in
+        # for is that the bonded translations generate the chosen lattice, which `_generates`
+        # already tests, and which implies the connectedness `bought` was there to enforce.
         closure = _independent(s.vectors[chosen]) ? _closure(s, chosen) : nothing
         if closure !== nothing
             signal = f(chosen, closure)
