@@ -229,6 +229,38 @@ supertype, which is what makes a meta-particle bonded to a plain one a `MethodEr
 const MetaBindingRules{D} = BindingRules{D,<:MetaParticleSpecies}
 const MetaPolyform{D,P} = Polyform{D,P,<:MetaBindingRules{D}}
 
+"""
+    originalrules(ps::MetaParticleSpecies)
+    originalrules(rules::MetaBindingRules)
+    originalrules(poly::MetaPolyform)
+
+Return the rules the meta level was lifted from: the ones the wrapped polyforms are built under.
+
+Distinct from [`inducedrules`](@ref), which projects the meta-rules down and may add bonds the
+original rules did not allow. These are the original rules themselves, unchanged.
+"""
+originalrules(ps::MetaParticleSpecies) = bindingrules(polyform(ps))
+
+"""
+    originalrules(rules::MetaBindingRules)
+
+Return the rules every species of `rules` wraps a polyform of, or throw if they disagree.
+"""
+function originalrules(rules::MetaBindingRules)
+    spcs = species(rules)
+    out = originalrules(first(spcs))
+    all(ps -> originalrules(ps) === out, spcs) ||
+        throw(ArgumentError("The meta-species wrap polyforms built under different binding rules."))
+    return out
+end
+
+"""
+    originalrules(poly::MetaPolyform)
+
+Return the rules the meta-particles of `poly` were lifted from.
+"""
+originalrules(poly::MetaPolyform) = originalrules(bindingrules(poly))
+
 # The color each site of `ps` carries inside the polyform it was taken from. A site keeps the
 # vertex range it has there whatever it is recolored to, so any one of its vertices names it.
 function _underlyingcolors(ps::MetaParticleSpecies)
@@ -249,9 +281,7 @@ valid.
 """
 function inducedrules(rules::MetaBindingRules)
     spcs = species(rules)
-    origrules = bindingrules(polyform(first(spcs)))
-    all(ps -> bindingrules(polyform(ps)) === origrules, spcs) ||
-        throw(ArgumentError("The meta-species wrap polyforms built under different binding rules."))
+    origrules = originalrules(rules)
 
     intmat = Matrix(interactionmatrix(origrules))
     cols = map(_underlyingcolors, spcs)

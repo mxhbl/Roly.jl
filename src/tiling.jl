@@ -20,10 +20,9 @@ end
 Assemble the tiling whose cell is `cell` and whose translates close the bonds `periodic`, a
 [`Contact`](@ref) per bond in `cell`'s own vertex numbering.
 
-Neither the cell nor the lattice is taken as given. Both are read back off the graph once it is
-canonically labeled: how large a cell the structure needs, where it is cut, which frame it sits
-in, and which translations generate it all follow from that labeling and not from how the search
-arrived.
+A [`MetaPolyform`](@ref) cell is recast into the rules it was lifted from first, so that the
+tiling speaks in particles rather than in the meta-particles the search grew it out of. The two
+share a vertex numbering, which is why `periodic` needs no translating.
 """
 function Tiling(cell::Polyform, periodic)
     # the cell's own bonds, read back into original vertex order, and then the periodic ones,
@@ -33,8 +32,20 @@ function Tiling(cell::Polyform, periodic)
     for contact in periodic, (v1, v2) in contact_pairing(contact)
         push!(pairs, (v1, v2))
     end
-    return _tiling(bindingrules(cell), copy(cell.particles), pairs)
+    poly = _asparticles(cell)
+    return _tiling(bindingrules(poly), copy(poly.particles), pairs)
 end
+
+# The cell in terms of particles rather than of whatever stands in for them. A meta-polyform is
+# recast into the rules it was lifted from, and shares its vertex numbering, so the bonds the
+# search recorded against the one are edges of the other and need no translating.
+#
+# Dispatched on the rules rather than on `MetaPolyform`, which subtypes correctly but cannot be
+# ordered against `Polyform` by method specificity, and so is only usable where it is the only
+# method of its function.
+_asparticles(cell::Polyform) = _asparticles(cell, bindingrules(cell))
+_asparticles(cell::Polyform, ::BindingRules) = cell
+_asparticles(cell::Polyform, ::MetaBindingRules) = recast(cell, originalrules(cell))
 
 # The tiling of `particles` bonded at the graph vertex pairs `pairs`, in those particles' own
 # numbering. Folded to its irreducible cell before it is returned, so no tiling ever escapes that
@@ -137,13 +148,11 @@ function _extratranslations(particles, basis)
 end
 
 # Whether a tiling has been folded as far as it goes, for the tests that hold the invariant down.
-_isirreducible(t::Tiling) =
-    isnothing(_fold(bindingrules(t), t.particles, _markerpairs(t), latticevectors(t)))
+_isirreducible(t::Tiling) = isnothing(_fold(bindingrules(t), t.particles, _markerpairs(t), latticevectors(t)))
 
 # A translation carries a particle onto another only if the two wear the same species in the same
 # orientation.
-_samepose(a::Particle, b::Particle) =
-    speciesindex(a) == speciesindex(b) && a.pose.psi ≈ b.pose.psi
+_samepose(a::Particle, b::Particle) = speciesindex(a) == speciesindex(b) && a.pose.psi ≈ b.pose.psi
 
 # Whether one particle is another shifted by a translation the lattice does not contain.
 function _sametranslate(a::Particle, b::Particle, cosets, basis)
@@ -227,8 +236,7 @@ end
 
 A graph vertex label no species of `rules` uses, worn by the vertices that stand in for bonds.
 """
-_markerlabel(rules::BindingRules) =
-    maximum(maximum(labels(graphrep(species(rules, i)))) for i in 1:nspecies(rules)) + 1
+_markerlabel(rules::BindingRules) = maximum(maximum(labels(graphrep(species(rules, i)))) for i in 1:nspecies(rules)) + 1
 
 # Record the bond between graph vertices `u` and `v` as a vertex of its own joined to both, rather
 # than as the edge `u -- v`.
@@ -279,8 +287,7 @@ function bonds(t::Tiling)
     seen = Set{NTuple{2,ParticleSite}}()
     out = Pair{ParticleSite,ParticleSite}[]
     for (_, (u, v)) in _markers(t)
-        key = minmax(_vertex_to_particle_site(t, u; canonidxs=false),
-                     _vertex_to_particle_site(t, v; canonidxs=false))
+        key = minmax(_vertex_to_particle_site(t, u; canonidxs=false), _vertex_to_particle_site(t, v; canonidxs=false))
         key in seen && continue
         push!(seen, key)
         push!(out, first(key) => last(key))
@@ -413,13 +420,13 @@ the graph.
 function _latticebasis(t::Tiling)
     vs = _translations(t)
     isempty(vs) && return vs
-    r = rank(reduce(hcat, vs))
+    # the same tolerance `_independent` uses, for the same reason: machine precision would call
+    # near-parallel translations independent and overcount the rank
+    r = rank(reduce(hcat, vs); rtol=_tol(first(vs)))
     for idx in _indexsubsets(length(vs), r)
         _generates(vs[idx], vs) && return _shortestbasis(vs[idx], vs)
     end
-    return error(
-        "Internal error: a tiling's periodic bonds name no basis of its lattice. Please file an issue."
-    )
+    return error("Internal error: a tiling's periodic bonds name no basis of its lattice. Please file an issue.")
 end
 
 # The shortest basis of the lattice `basis` spans. Every lattice vector no longer than the longest
@@ -445,12 +452,11 @@ function _shortestbasis(basis, preferred)
     out = eltype(basis)[]
     for v in cands
         push!(out, v)
-        rank(reduce(hcat, out)) == length(out) || pop!(out)
+        _independent(out) || pop!(out)
         length(out) == r && break
     end
-    _generates(out, basis) || error(
-        "Internal error: the shortest vectors of a tiling's lattice are not a basis of it. Please file an issue."
-    )
+    _generates(out, basis) ||
+        error("Internal error: the shortest vectors of a tiling's lattice are not a basis of it. Please file an issue.")
     return out
 end
 
@@ -459,14 +465,13 @@ end
 # vectors the structure gives no reason to tell apart.
 function _shortestfirst(v, preferred)
     i = findfirst(w -> w ≈ v, preferred)
-    return (round(norm(v); digits=7), isnothing(i) ? length(preferred) + 1 : i,
-            Tuple(round.(v; digits=7)))
+    return (round(norm(v); digits=7), isnothing(i) ? length(preferred) + 1 : i, Tuple(round.(v; digits=7)))
 end
 
 # Whether every vector of `vs` is an integer combination of the independent vectors `basis`.
 function _generates(basis, vs)
+    _independent(basis) || return false
     B = reduce(hcat, basis)
-    rank(B) == length(basis) || return false
     return all(vs) do v
         c = B \ v
         norm(B * c - v) < _tol(v) || return false
@@ -491,29 +496,33 @@ end
 
 Enumerate the periodic closures of `poly`, streaming each one to `f` as a [`Tiling`](@ref).
 
-`f(t)` returns one of three signals:
+`f(t, order)` takes a tiling and the number of copies of `poly` the cell it was found through
+held, and returns one of three signals:
 
   - `ACCEPT` (or `true`): enumeration continues as normal.
   - `REJECT` (or `false`): no further vector is added to `t`'s lattice.
   - `BREAK`: the enumeration terminates immediately.
 
+`order` is what the search was at, not what `t` reports. A tiling found through a cell of three
+copies may fold to one, and `tilingorder(t)` is then 1 while `order` is 3.
+
 Each tiling is visited exactly once: a cell can close the same way along several choices of
 vectors, and the repeats never reach `f`. Keyword arguments are as in [`tilings`](@ref).
 """
 function tilingenum(f::F, poly::Polyform; maxorder::Integer=1) where {F}
-    isempty(opensites(poly)) && return
+    isempty(opensites(poly)) && return nothing
     # `exposeinert=true` to catch overlaps of inert sites
     metarules = BindingRules(MetaParticleSpecies(poly; exposeinert=true))
 
     # keep track of duplicates and only call f on newly found tilings
-    # still need to descent to offspring of seen tilings
+    # BUT: still need to generate offspring of seen tilings, so accept those without calling f()
     seen = Set{_tilingtype(poly)}()
-    once(t) = t in seen ? ACCEPT : (push!(seen, t); f(t))
+    once(t, order) = t in seen ? ACCEPT : (push!(seen, t); f(t, order))
 
-    polyenum(metarules; maxsize=maxorder) do cell, _
-        return _celltilings(once, cell)
+    polyenum(metarules; maxsize=maxorder) do cell, order
+        return _celltilings(once, cell, order)
     end
-    return
+    return nothing
 end
 
 """
@@ -537,7 +546,7 @@ Use [`tilingenum`](@ref) to process the closures as they are found, and to stop 
 """
 function tilings(poly::Polyform; kwargs...)
     out = _tilingtype(poly)[]
-    tilingenum(t -> (push!(out, t); ACCEPT), poly; kwargs...)
+    tilingenum((t, _) -> (push!(out, t); ACCEPT), poly; kwargs...)
     return out
 end
 
@@ -550,7 +559,7 @@ end
 # The first tiling of `poly` that `pred` accepts, or `nothing`, leaving the rest unenumerated.
 function _findtiling(pred::F, poly::Polyform; kwargs...) where {F}
     hit = Ref{Union{Nothing,_tilingtype(poly)}}(nothing)
-    tilingenum(poly; kwargs...) do t
+    tilingenum(poly; kwargs...) do t, _
         pred(t) || return ACCEPT
         hit[] = t
         return BREAK
@@ -569,48 +578,39 @@ struct _ShellSearch{PF,V,F}
     radius::F                # how far past its center the widest particle reaches
 end
 
-# The rules the cell's meta-particles were lifted from: each wraps a polyform that carries them.
-_baserules(cell::Polyform) = bindingrules(polyform(first(species(bindingrules(cell)))))
-
 # Every tiling one candidate cell admits, streamed to `f`.
-function _celltilings(f::F, cell::Polyform) where {F}
+function _celltilings(f::F, cell::Polyform, order::Integer) where {F}
     sites = collect(bindingsites(cell))
-    # a translate can use a site that is unbound inside the cell and not inert; everything else is
-    # spent before the search starts, and a `complete` closure is one that uses up what is left
-    spent = trues(length(sites))
+
+    spent = trues(length(sites)) # sites that are already used up
     for l in opensites(cell)
         spent[siteindex(cell, l)] = false
     end
+
     free = [s for (i, s) in enumerate(sites) if !spent[i]]
     isempty(free) && return ACCEPT
+
     metarules = bindingrules(cell)
     vectors = _candidatelatticevectors(free, metarules)
     isempty(vectors) && return ACCEPT
 
-    # only a cell that got this far is worth reading back as a polyform of the underlying rules.
-    # The meta cell and its recast share a vertex numbering, so the contacts the search records
-    # against the one are edges of the other
-    cellpoly = recast(cell, _baserules(cell))
     parts = cell.particles
     reach = maximum(norm(p.pose.x - q.pose.x) for p in parts, q in parts)
     radius = maximum(bounding_radius(species(metarules, speciesindex(p))) for p in parts)
     search = _ShellSearch(cell, vectors, _siteofvertex(sites), spent, reach, radius)
-    emit(_, contacts) = f(Tiling(cellpoly, contacts))
+    emit(_, contacts) = f(Tiling(cell, contacts), order)
     return _tilings!(emit, search, dimension(metarules), Int[], 1)
 end
 
-# Translations that lay an open site onto a compatible, already-aligned partner site. A site pair
-# is seen both ways round, so every direction arrives twice, once with each sign; orienting each
-# one keeps a single representative, the shells covering the other sign.
+# Collect all translations between aligned and color-compatible `sites`
 function _candidatelatticevectors(sites, rules)
     intmat = interactionmatrix(rules)
     vecs = typeof(first(sites).pose.x)[]
     for s1 in sites, s2 in sites
         intmat[color(s1), color(s2)] || continue
         isaligned(s1, s2) || continue
-        v = s1.pose.x - s2.pose.x
-        norm(v) < _tol(v) && continue
-        v = _orient(v)
+        istouching(s1, s2) && continue # sites shouldnt be touching, but check just in case
+        v = _orient(s1.pose.x - s2.pose.x)
         any(u -> u ≈ v, vecs) || push!(vecs, v)
     end
     return vecs
@@ -620,8 +620,7 @@ end
 # A set that fails cannot be rescued by adding a vector to it -- the added vector only lays down
 # more copies, and every objection is to a copy -- so a failure prunes the whole subtree, as does
 # an `f` that rejects.
-function _tilings!(f::F, s::_ShellSearch, maxvecs::Integer, chosen::Vector{Int},
-    from::Integer) where {F}
+function _tilings!(f::F, s::_ShellSearch, maxvecs::Integer, chosen::Vector{Int}, from::Integer) where {F}
     length(chosen) == maxvecs && return ACCEPT
     for idx in from:length(s.vectors)
         push!(chosen, idx)
@@ -707,7 +706,7 @@ function _neighborcells(s::_ShellSearch, chosen::Vector{Int})
     bound = [floor(Int, span * norm(view(P, i, :))) for i in eachindex(basis)]
 
     out = Tuple{NTuple{length(chosen),Int},eltype(basis)}[]
-    for m in Iterators.product((( -bound[i]):bound[i] for i in eachindex(basis))...)
+    for m in Iterators.product(((-bound[i]):bound[i] for i in eachindex(basis))...)
         all(iszero, m) && continue
         t = sum(m[i] * basis[i] for i in eachindex(basis))
         _withinreach(s, t) && push!(out, (m, t))
@@ -736,7 +735,20 @@ function _siteofvertex(sites)
 end
 _lookup(s::_ShellSearch, vs) = first(vs) <= length(s.ofvertex) ? s.ofvertex[first(vs)] : 0
 
-_independent(vs) = rank(reduce(hcat, vs)) == length(vs)
+"""
+    _independent(vs)
+
+Whether the vectors `vs` span a parallelepiped of positive volume.
+
+`rank` would answer the same question, but its tolerance is relative to machine precision, so
+vectors that are parallel to within any tolerance we care about still count as independent. The
+Gram determinant is the squared volume, and dividing by the lengths makes it scale free: it runs
+from 1 for orthogonal vectors down to 0 as they collapse, whatever units the system is in.
+"""
+function _independent(vs)
+    B = reduce(hcat, vs)
+    return det(B' * B) > (_tol(first(vs)) * prod(norm, vs))^2
+end
 
 # `B \ _eye(B)` is the left inverse of a matrix with independent columns, which is what bounds the
 # coefficients of a vector of a given length.
@@ -812,8 +824,7 @@ collides. A screw by `2πp/q` closes into a translation over `q` copies and is f
 `maxorder ≥ q`, but an irrational one never closes at all, and no periodicity test can see it.
 See [`isunbounded`](@ref).
 """
-function canchain(rules::BindingRules;
-    maxlength::Integer=chainstatebound(rules) + 1, kwargs...)
+function canchain(rules::BindingRules; maxlength::Integer=chainstatebound(rules) + 1, kwargs...)
     frontier = [Polyform(rules, i) for i in 1:nspecies(rules)]
     seen = Set(hash(graphrep(p)) for p in frontier)
     while !isempty(frontier)
@@ -915,7 +926,7 @@ function _walkchain(poly::Polyform, states, maxlength)
         isinert(rules, color(site)) && continue
         for loc in possible_attachments(rules, color(site))
             mate = bindingsite(rules, loc)
-            for r in 0:(_ndistincttwists(site, mate)-1)
+            for r in 0:(_ndistincttwists(site, mate) - 1)
                 child = copy(poly)
                 ismissing(raise!(child, site, loc, r)) && continue
                 # `raise!` forms every geometric contact, so growth may cross-link back onto the
@@ -943,7 +954,7 @@ end
 # is decided by the screw's pitch, and if it can, by finitely many placements.
 function _screwwitness(poly::Polyform, i::Integer, j::Integer)
     rules = bindingrules(poly)
-    cell = poly.particles[i:(j-1)]
+    cell = poly.particles[i:(j - 1)]
     g = poly.particles[j].pose * inv(poly.particles[i].pose)
 
     axis, h = _screwpitch(g)
@@ -953,7 +964,7 @@ function _screwwitness(poly::Polyform, i::Integer, j::Integer)
     rmax = maximum(bounding_radius(species(rules, speciesindex(p))) for p in cell)
     extent = maximum(us) - minimum(us) + 2 * rmax
     gm = g
-    for _ in 1:ceil(Int, extent/abs(h))
+    for _ in 1:ceil(Int, extent / abs(h))
         for p in cell
             moved = gm * p
             first(_overlap_and_contacts(cell, moved, rules)) === true && return nothing
@@ -1002,7 +1013,7 @@ function _extendends(poly::Polyform)
             isinert(rules, color(site)) && continue
             for loc in possible_attachments(rules, color(site))
                 mate = bindingsite(rules, loc)
-                for r in 0:(_ndistincttwists(site, mate)-1)
+                for r in 0:(_ndistincttwists(site, mate) - 1)
                     child = copy(poly)
                     ismissing(raise!(child, site, loc, r)) && continue
                     _ischain(child) && push!(out, child)
@@ -1016,6 +1027,5 @@ end
 # A path: every particle bonded to at most two others, and no cycle.
 function _ischain(poly::Polyform)
     nbonds = sum(part -> _bonddegree(poly, part), poly.particles; init=0) ÷ 2
-    return nbonds == nparticles(poly) - 1 &&
-           all(part -> _bonddegree(poly, part) <= 2, poly.particles)
+    return nbonds == nparticles(poly) - 1 && all(part -> _bonddegree(poly, part) <= 2, poly.particles)
 end
