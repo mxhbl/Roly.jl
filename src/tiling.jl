@@ -421,14 +421,14 @@ function _latticebasis(t::Tiling)
 end
 
 # The shortest basis of the lattice `basis` spans. Every lattice vector no longer than the longest
-# of `basis` is enumerated -- the rows of the pseudoinverse bound how far the coefficients can
+# of `basis` is enumerated -- the rows of its left inverse bound how far the coefficients can
 # reach -- and the shortest independent ones are taken, which is a basis for rank at most three.
 # Ties in length go to a bonded translation, in canonical order, before anything else.
 function _shortestbasis(basis, preferred)
     r = length(basis)
     B = reduce(hcat, basis)
     reach = maximum(norm, basis)
-    P = pinv(B)
+    P = inv(B' * B) * B'
     bound = [max(1, ceil(Int, reach * norm(view(P, i, :)))) for i in 1:r]
 
     cands = eltype(basis)[]
@@ -485,7 +485,7 @@ function _indexsubsets(n::Integer, r::Integer)
 end
 
 """
-    tilingenum(f, poly::Polyform; nreps=2, maxorder=1)
+    tilingenum(f, poly::Polyform; maxorder=1)
 
 Enumerate the periodic closures of `poly`, streaming each one to `f` as a [`Tiling`](@ref).
 
@@ -498,7 +498,7 @@ Enumerate the periodic closures of `poly`, streaming each one to `f` as a [`Tili
 Each tiling is visited exactly once: a cell can close the same way along several choices of
 vectors, and the repeats never reach `f`. Keyword arguments are as in [`tilings`](@ref).
 """
-function tilingenum(f::F, poly::Polyform; nreps::Integer=2, maxorder::Integer=1) where {F}
+function tilingenum(f::F, poly::Polyform; maxorder::Integer=1) where {F}
     isempty(opensites(poly)) && return
     # `exposeinert=true` to catch overlaps of inert sites
     metarules = BindingRules(MetaParticleSpecies(poly; exposeinert=true))
@@ -509,19 +509,18 @@ function tilingenum(f::F, poly::Polyform; nreps::Integer=2, maxorder::Integer=1)
     once(t) = t in seen ? ACCEPT : (push!(seen, t); f(t))
 
     polyenum(metarules; maxsize=maxorder) do cell, _
-        return _celltilings(once, cell, nreps)
+        return _celltilings(once, cell)
     end
     return
 end
 
 """
-    tilings(poly::Polyform; nreps=2, maxorder=1)
+    tilings(poly::Polyform; maxorder=1)
 
 Return the periodic closures of `poly`: choices of up to `dimension` translation vectors under
 which copies of a cell form valid bonds with each other and never overlap, each vector
 contributing at least one bond.
 
-  - `nreps`: neighbor shells placed and checked, either way along each vector.
   - `maxorder`: how many copies of `poly` a cell may be *searched* at, grown as a meta-polyform
     and then checked for translation tilings. Above 1 this reaches tilings in which `poly` appears
     in rotated configurations. It does not describe what comes back, since a tiling is always
@@ -559,19 +558,20 @@ end
 
 # What every placement is measured against: the cell being translated, the candidate translations,
 # and what the cell brings to the search before a single copy is laid down.
-struct _ShellSearch{PF,V}
+struct _ShellSearch{PF,V,F}
     cell::PF                 # the candidate cell, as the meta-polyform it was grown as
     vectors::Vector{V}
     ofvertex::Vector{Int}    # first vertex of a site -> its index among the cell's, else 0
-    nreps::Int
     spent::BitVector         # sites no translate can use: bound inside the cell, or inert
+    reach::F                 # how far apart two of the cell's particles sit
+    radius::F                # how far past its center the widest particle reaches
 end
 
 # The rules the cell's meta-particles were lifted from: each wraps a polyform that carries them.
 _baserules(cell::Polyform) = bindingrules(polyform(first(species(bindingrules(cell)))))
 
 # Every tiling one candidate cell admits, streamed to `f`.
-function _celltilings(f::F, cell::Polyform, nreps::Integer) where {F}
+function _celltilings(f::F, cell::Polyform) where {F}
     sites = collect(bindingsites(cell))
     # a translate can use a site that is unbound inside the cell and not inert; everything else is
     # spent before the search starts, and a `complete` closure is one that uses up what is left
@@ -589,7 +589,10 @@ function _celltilings(f::F, cell::Polyform, nreps::Integer) where {F}
     # The meta cell and its recast share a vertex numbering, so the contacts the search records
     # against the one are edges of the other
     cellpoly = recast(cell, _baserules(cell))
-    search = _ShellSearch(cell, vectors, _siteofvertex(sites), Int(nreps), spent)
+    parts = cell.particles
+    reach = maximum(norm(p.pose.x - q.pose.x) for p in parts, q in parts)
+    radius = maximum(bounding_radius(species(metarules, speciesindex(p))) for p in parts)
+    search = _ShellSearch(cell, vectors, _siteofvertex(sites), spent, reach, radius)
     emit(_, contacts) = f(Tiling(cellpoly, contacts))
     return _tilings!(emit, search, dimension(metarules), Int[], 1)
 end
@@ -620,7 +623,9 @@ function _tilings!(f::F, s::_ShellSearch, maxvecs::Integer, chosen::Vector{Int},
     length(chosen) == maxvecs && return ACCEPT
     for idx in from:length(s.vectors)
         push!(chosen, idx)
-        closure = _closure(s, chosen)
+        # a dependent set generates a lattice a smaller one already generates, and would lay two
+        # copies on one point besides
+        closure = _independent(s.vectors[chosen]) ? _closure(s, chosen) : nothing
         if closure !== nothing
             signal = f(chosen, closure)
             signal == BREAK && return BREAK
@@ -631,11 +636,15 @@ function _tilings!(f::F, s::_ShellSearch, maxvecs::Integer, chosen::Vector{Int},
     return ACCEPT
 end
 
-# Lay a copy of the cell at every lattice point `chosen` reaches within `nreps` shells, and return
-# the bonds the copies form with it, one [`Contact`](@ref) per bond. `nothing` if the placement is
-# no tiling at all -- copies overlap, a contact is not a valid bond or does not join two sites of
-# the cell, a site is claimed twice, or one of the chosen vectors buys no bond, which would only
-# stack disconnected copies.
+# Lay a copy of the cell at every lattice point the chosen vectors put within reach of it, and
+# return the bonds the copies form with it, one [`Contact`](@ref) per bond. `nothing` if the
+# placement is no tiling at all -- copies overlap, a contact is not a valid bond or does not join
+# two sites of the cell, a site is claimed twice, or one of the chosen vectors buys no bond, which
+# would only stack disconnected copies.
+#
+# Only the cell is checked against, never one copy against another: copies at `t₁` and `t₂` sit
+# exactly as the cell and the copy at `t₂ - t₁` do, and that difference is itself a lattice point,
+# so it is either within reach and checked here or out of reach and unable to touch.
 function _closure(s::_ShellSearch, chosen::Vector{Int})
     parts = s.cell.particles
     rules = bindingrules(s.cell)    # the *meta* rules: the cell is translated as meta-particles
@@ -644,17 +653,10 @@ function _closure(s::_ShellSearch, chosen::Vector{Int})
     partner = [s.spent[i] ? -1 : 0 for i in eachindex(s.spent)]
     contacts = Contact[]
     bought = zeros(Int, length(chosen))
-    placed = eltype(parts)[]
 
-    # the shell runs both ways along every vector, so one choice of vectors stands for the whole
-    # lattice it generates rather than for one cone of it
-    for m in Iterators.product(ntuple(_ -> (-s.nreps):(s.nreps), length(chosen))...)
-        all(iszero, m) && continue
-        t = sum(m[i] * s.vectors[chosen[i]] for i in eachindex(chosen))
+    for (m, t) in _neighborcells(s, chosen)
         for part in parts
-            sp = part + t
-            first(_overlap_and_contacts(placed, sp, rules)) === true && return nothing
-            ov, cts = _overlap_and_contacts(parts, sp, rules)
+            ov, cts = _overlap_and_contacts(parts, part + t, rules)
             ov && return nothing
             for contact in cts
                 # both endpoints must be sites of the cell
@@ -669,11 +671,41 @@ function _closure(s::_ShellSearch, chosen::Vector{Int})
                 # the copy is a translate along the last vector it moves on, so credit that one
                 bought[findlast(!iszero, m)] += 1
             end
-            push!(placed, sp)
         end
     end
     all(>(0), bought) || return nothing
     return contacts
+end
+
+# The lattice points near enough to the cell that a copy there could touch it, each with the
+# coefficients that reach it. A copy displaced by `t` can only meet the cell if `t` is no longer
+# than the cell's own extent along `t` plus what the particles at either end reach, so that is
+# where the shells stop -- no cutoff to choose, and nothing placed that could not matter.
+function _neighborcells(s::_ShellSearch, chosen::Vector{Int})
+    basis = s.vectors[chosen]
+    B = reduce(hcat, basis)
+    # the coefficients of a vector no longer than `span` are bounded by the rows of the left
+    # inverse; the vectors are independent, so the Gram matrix gives it without a decomposition
+    P = inv(B' * B) * B'
+    span = s.reach + 2 * s.radius
+    bound = [floor(Int, span * norm(view(P, i, :))) for i in eachindex(basis)]
+
+    out = Tuple{NTuple{length(chosen),Int},eltype(basis)}[]
+    for m in Iterators.product((( -bound[i]):bound[i] for i in eachindex(basis))...)
+        all(iszero, m) && continue
+        t = sum(m[i] * basis[i] for i in eachindex(basis))
+        _withinreach(s, t) && push!(out, (m, t))
+    end
+    return out
+end
+
+# Whether a copy displaced by `t` can reach the cell at all: the two overlap only where the cell's
+# own spread along `t` reaches across it, and each end reaches a particle's radius further.
+function _withinreach(s::_ShellSearch, t)
+    d = norm(t)
+    d > 0 || return false
+    lo, hi = extrema(dot(p.pose.x, t / d) for p in s.cell.particles)
+    return d <= hi - lo + 2 * s.radius + _tol(t)
 end
 
 # A contact comes back as the vertex range its site occupies, and a translated copy keeps the
@@ -687,6 +719,8 @@ function _siteofvertex(sites)
     return ofvertex
 end
 _lookup(s::_ShellSearch, vs) = first(vs) <= length(s.ofvertex) ? s.ofvertex[first(vs)] : 0
+
+_independent(vs) = rank(reduce(hcat, vs)) == length(vs)
 
 # spatial units are O(1), so use sqrt(eps) for absolute tolerance
 _tol(::AbstractVector{F}) where {F} = sqrt(eps(F))
