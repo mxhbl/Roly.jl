@@ -49,7 +49,7 @@ function Tiling(cell::Polyform, periodic)
 end
 
 # The tiling of `particles` bonded at the graph vertex pairs `pairs`, in those particles' own
-# numbering. Reduced to its irreducible cell before it is returned, so no tiling ever exists that
+# numbering. Folded to its irreducible cell before it is returned, so no tiling ever escapes that
 # a smaller one describes.
 function _tiling(rules::BindingRules{D}, particles, pairs) where {D}
     g = NautyDiGraph(0)
@@ -68,14 +68,18 @@ function _tiling(rules::BindingRules{D}, particles, pairs) where {D}
     _canonicalframe!(t)
     append!(t.vectors, _latticebasis(t))
 
-    smaller = _fold(t)
+    # asked of the finished tiling rather than of the cell the search handed over, so that folding
+    # reads the canonical basis and not whichever one the search happened to walk
+    smaller = _fold(rules, t.particles, _markerpairs(t), latticevectors(t))
     return isnothing(smaller) ? t : _tiling(rules, smaller...)
 end
 
-"""
-    _fold(t::Tiling)
+_markerpairs(t::Tiling) = [pair for (_, pair) in _markers(t)]
 
-Return `(particles, pairs)` for the tiling `t` repeats, or `nothing` if `t` is already irreducible.
+"""
+    _fold(rules, particles, pairs, basis)
+
+Return the `(particles, pairs)` of the cell this one repeats, or `nothing` if it repeats none.
 
 A cell that is several copies of a smaller one describes a structure a smaller cell describes too,
 and the two are the same tiling however different their graphs look. The extra translations are
@@ -85,58 +89,68 @@ many such differences can each be tested against the whole cell. What passes gen
 translation group.
 
 One particle of each orbit is then kept. Which one does not matter, since the cell is cut and
-framed again from scratch, and it is that cut which places the survivors against one another.
+framed from scratch afterwards, and it is that cut which places the survivors against one another.
 """
-function _fold(t::Tiling)
-    parts = t.particles
-    cosets = _extratranslations(t)
+function _fold(rules::BindingRules, particles, pairs, basis)
+    cosets = _extratranslations(particles, basis)
     isempty(cosets) && return nothing
 
-    orbit = zeros(Int, length(parts))
+    orbit = zeros(Int, length(particles))
     reps = Int[]
-    for i in eachindex(parts)
+    for i in eachindex(particles)
         orbit[i] == 0 || continue
         push!(reps, i)
         orbit[i] = length(reps)
-        for j in (i + 1):length(parts)
+        for j in (i + 1):length(particles)
             orbit[j] == 0 || continue
-            _sametranslate(parts[i], parts[j], cosets, latticevectors(t)) && (orbit[j] = length(reps))
+            _sametranslate(particles[i], particles[j], cosets, basis) && (orbit[j] = length(reps))
         end
     end
 
-    rules = bindingrules(t)
     lead = Int[]
     for r in reps
-        push!(lead, isempty(lead) ? 1 : last(lead) + nv(graphrep(species(rules, speciesindex(parts[r])))))
+        width = nv(graphrep(species(rules, speciesindex(particles[r]))))
+        push!(lead, isempty(lead) ? 1 : last(lead) + width)
     end
-    kept = [typeof(p)(p.pose, lead[k], speciesindex(p)) for (k, p) in enumerate(parts[reps])]
+    kept = [typeof(p)(p.pose, lead[k], speciesindex(p)) for (k, p) in enumerate(particles[reps])]
 
     # a bond onto a dropped particle is a bond onto the translate that survived it, and a bond and
     # its own translates are one bond of the smaller cell, so the pairs collapse
-    onto(v) = let p = _vertex_to_particle_site(t, v; canonidxs=false).particle
-        lead[orbit[p]] + v - leadingvertex(parts[p])
-    end
-    folded = unique!([minmax(onto(u), onto(v)) for (_, (u, v)) in _markers(t)])
-    return kept, folded
+    owner = _particleofvertex(rules, particles)
+    onto(v) = lead[orbit[owner[v]]] + v - leadingvertex(particles[owner[v]])
+    return kept, unique!([minmax(onto(u), onto(v)) for (u, v) in pairs])
 end
 
-# The translations of `t` that its lattice does not already contain, one per coset. A candidate
+# Which particle each graph vertex belongs to, as an array: the particles own contiguous blocks of
+# vertices, so one pass fills it and every later lookup is an index.
+function _particleofvertex(rules::BindingRules, particles)
+    owner = Int[]
+    for (i, p) in enumerate(particles)
+        append!(owner, fill(i, nv(graphrep(species(rules, speciesindex(p))))))
+    end
+    return owner
+end
+
+# The translations of a cell that its lattice does not already contain, one per coset. A candidate
 # moves the first particle onto another; it is a translation of the structure when it moves every
 # particle onto one, up to the lattice.
-function _extratranslations(t::Tiling)
-    parts = t.particles
-    basis = latticevectors(t)
-    out = eltype(t.vectors)[]
-    for j in 2:length(parts)
-        _samepose(parts[1], parts[j]) || continue
-        v = parts[j].pose.x - parts[1].pose.x
+function _extratranslations(particles, basis)
+    out = eltype(basis)[]
+    for j in 2:length(particles)
+        _samepose(particles[1], particles[j]) || continue
+        v = particles[j].pose.x - particles[1].pose.x
         any(w -> _inlattice(v - w, basis), out) && continue
-        all(p -> any(q -> _samepose(p, q) && _inlattice(p.pose.x + v - q.pose.x, basis), parts),
-            parts) || continue
+        all(particles) do p
+            any(q -> _samepose(p, q) && _inlattice(p.pose.x + v - q.pose.x, basis), particles)
+        end || continue
         push!(out, v)
     end
     return out
 end
+
+# Whether a tiling has been folded as far as it goes, for the tests that hold the invariant down.
+_isirreducible(t::Tiling) =
+    isnothing(_fold(bindingrules(t), t.particles, _markerpairs(t), latticevectors(t)))
 
 # A translation carries a particle onto another only if the two wear the same species in the same
 # orientation.
@@ -428,7 +442,7 @@ function _shortestbasis(basis, preferred)
     r = length(basis)
     B = reduce(hcat, basis)
     reach = maximum(norm, basis)
-    P = inv(B' * B) * B'
+    P = B \ _eye(B)
     bound = [max(1, ceil(Int, reach * norm(view(P, i, :)))) for i in 1:r]
 
     cands = eltype(basis)[]
@@ -684,9 +698,8 @@ end
 function _neighborcells(s::_ShellSearch, chosen::Vector{Int})
     basis = s.vectors[chosen]
     B = reduce(hcat, basis)
-    # the coefficients of a vector no longer than `span` are bounded by the rows of the left
-    # inverse; the vectors are independent, so the Gram matrix gives it without a decomposition
-    P = inv(B' * B) * B'
+    # a vector no longer than `span` has coefficients bounded by the rows of the left inverse
+    P = B \ _eye(B)
     span = s.reach + 2 * s.radius
     bound = [floor(Int, span * norm(view(P, i, :))) for i in eachindex(basis)]
 
@@ -721,6 +734,10 @@ end
 _lookup(s::_ShellSearch, vs) = first(vs) <= length(s.ofvertex) ? s.ofvertex[first(vs)] : 0
 
 _independent(vs) = rank(reduce(hcat, vs)) == length(vs)
+
+# `B \ _eye(B)` is the left inverse of a matrix with independent columns, which is what bounds the
+# coefficients of a vector of a given length.
+_eye(B::AbstractMatrix{F}) where {F} = Matrix{F}(I, size(B, 1), size(B, 1))
 
 # spatial units are O(1), so use sqrt(eps) for absolute tolerance
 _tol(::AbstractVector{F}) where {F} = sqrt(eps(F))

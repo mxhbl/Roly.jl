@@ -110,8 +110,8 @@
 
         # and nothing that comes back can be folded further, whatever it was grown from: a cell
         # holding two copies of a smaller one carries a translation its lattice does not
-        @test all(isnothing(Roly._fold(t)) for t in tilings(sqmono; maxorder=3))
-        @test all(isnothing(Roly._fold(t)) for t in tilings(mono; maxorder=2))
+        @test all(Roly._isirreducible(t) for t in tilings(sqmono; maxorder=3))
+        @test all(Roly._isirreducible(t) for t in tilings(mono; maxorder=2))
     end
 
     # a cell's sites are read off the cell, not off the meta-species the search grows it from.
