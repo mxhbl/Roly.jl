@@ -879,18 +879,32 @@ function overlap_and_contacts(poly::Polyform, part::Particle; kwargs...)
 end
 
 # Walk the unbound binding sites of `poly` in canonical order, yielding each one's
-# `(particle, site)` location together with the site itself. The four accessors below project it.
+# `(particle, site)` location, its index among all of `poly`'s sites, and the site itself. The
+# accessors below project whichever of the three they are named for.
+#
+# One pass over the particles first, recording where each one's block of vertices starts and where
+# its sites start, so the walk neither scans for the particle owning a vertex nor counts sites to
+# place one.
 function _exposed(poly::AbstractPolyform)
     rules = bindingrules(poly)
-    index = Dict(leadingvertex(p) => i for (i, p) in enumerate(poly.particles))
-    out = Tuple{ParticleSiteLoc,sitetype(rules)}[]
+    ofleading = zeros(Int, nv(graphrep(poly)))
+    firstsite = Vector{Int}(undef, nparticles(poly))
+    k = 1
+    for (i, part) in enumerate(poly.particles)
+        ofleading[leadingvertex(part)] = i
+        firstsite[i] = k
+        k += nsites(part, rules)
+    end
+
+    out = Tuple{ParticleSiteLoc,Int,sitetype(rules)}[]
     for orig_v in poly.canon2orig
-        part = particle_from_leadingvertex(poly, orig_v)
-        isnothing(part) && continue
-        for k in 1:nsites(part, rules)
-            s = bindingsite(part, rules, k)
+        i = ofleading[orig_v]
+        i == 0 && continue
+        part = poly.particles[i]
+        for j in 1:nsites(part, rules)
+            s = bindingsite(part, rules, j)
             _isbound_vertex(poly, part, first(s.vertices); canonidxs=false) && continue
-            push!(out, (ParticleSiteLoc(index[leadingvertex(part)], k), s))
+            push!(out, (ParticleSiteLoc(i, j), firstsite[i] + j - 1, s))
         end
     end
     return out
@@ -912,7 +926,7 @@ address but nothing gets the address back from a site. A name ending in `sites` 
 These are the sites a [`MetaParticleSpecies`](@ref) may expose. It exposes the open ones by
 default, and an inert one becomes usable simply by being named and given a live color.
 """
-exposedsitelocs(poly::AbstractPolyform) = [l for (l, _) in _exposed(poly)]
+exposedsitelocs(poly::AbstractPolyform) = [l for (l, _, _) in _exposed(poly)]
 
 """
     opensitelocs(poly::AbstractPolyform)
@@ -924,7 +938,14 @@ See [`exposedsitelocs`](@ref), which lists the inert ones too.
 """
 function opensitelocs(poly::AbstractPolyform)
     rules = bindingrules(poly)
-    return [l for (l, s) in _exposed(poly) if !isinert(rules, color(s))]
+    return [l for (l, _, s) in _exposed(poly) if !isinert(rules, color(s))]
+end
+
+# The open sites by their index among all of `poly`'s sites, for callers that hold one array per
+# site and would otherwise have to convert every address back with `siteindex`.
+function _opensiteindices(poly::AbstractPolyform)
+    rules = bindingrules(poly)
+    return [i for (_, i, s) in _exposed(poly) if !isinert(rules, color(s))]
 end
 
 """

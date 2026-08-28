@@ -581,18 +581,15 @@ end
 
 # Every tiling one candidate cell admits, streamed to `f`.
 function _celltilings(f::F, cell::Polyform, order::Integer) where {F}
+    open = _opensiteindices(cell)
+    isempty(open) && return ACCEPT
+
     sites = collect(bindingsites(cell))
-
     spent = trues(length(sites)) # sites that are already used up
-    for l in opensitelocs(cell)
-        spent[siteindex(cell, l)] = false
-    end
-
-    free = [s for (i, s) in enumerate(sites) if !spent[i]]
-    isempty(free) && return ACCEPT
+    spent[open] .= false
 
     metarules = bindingrules(cell)
-    vectors = _candidatelatticevectors(free, metarules)
+    vectors = _candidatelatticevectors(view(sites, open), metarules)
     isempty(vectors) && return ACCEPT
 
     parts = cell.particles
