@@ -431,15 +431,15 @@ function _latticebasis(t::Tiling)
 end
 
 # The shortest basis of the lattice `basis` spans. Every lattice vector no longer than the longest
-# of `basis` is enumerated -- the rows of its left inverse bound how far the coefficients can
-# reach -- and the shortest independent ones are taken, which is a basis for rank at most three.
+# of `basis` is enumerated -- the dual basis bounds how far the coefficients can reach -- and the
+# shortest independent ones are taken, which is a basis for rank at most three.
 # Ties in length go to a bonded translation, in canonical order, before anything else.
 function _shortestbasis(basis, preferred)
     r = length(basis)
     B = reduce(hcat, basis)
-    reach = maximum(norm, basis)
-    P = B \ _eye(B)
-    bound = [max(1, ceil(Int, reach * norm(view(P, i, :)))) for i in 1:r]
+    longest = maximum(norm, basis)
+    dual = inv(B' * B) * B'
+    bound = [max(1, ceil(Int, longest * norm(view(dual, i, :)))) for i in 1:r]
 
     cands = eltype(basis)[]
     for c in Iterators.product(((-bound[i]):bound[i] for i in 1:r)...)
@@ -521,7 +521,9 @@ function tilingenum(f::F, poly::Polyform; maxorder::Integer=1) where {F}
     once(t, order) = t in seen ? ACCEPT : (push!(seen, t); f(t, order))
 
     polyenum(metarules; maxsize=maxorder) do cell, order
-        return _celltilings(once, cell, order)
+        return _ShellSearch(cell)() do contacts
+            return once(Tiling(cell, contacts), order)
+        end
     end
     return nothing
 end
@@ -575,34 +577,48 @@ struct _ShellSearch{PF,V,F}
     vectors::Vector{V}
     free::Vector{Int}        # first vertex of every site a translate may still use
     nvertices::Int           # how many vertices the cell's graph has
-    reach::F                 # how far apart two of the cell's particles sit
+    span::F                  # the widest the cell can be, whichever way it is measured
     radius::F                # how far past its center the widest particle reaches
 end
 
 # Every tiling one candidate cell admits, streamed to `f`.
-function _celltilings(f::F, cell::Polyform, order::Integer) where {F}
+"""
+    _ShellSearch(cell::Polyform)
+
+Set up the search for the lattices `cell` closes under: which of its sites a translate may still
+use, which translations are worth trying, and how far the cell reaches.
+
+A cell with nothing to offer needs no special case. Its free sites name no candidate translations,
+and a search with no candidates has nothing to walk.
+"""
+function _ShellSearch(cell::Polyform)
+    rules = bindingrules(cell)
     # a translate may use a site that is unbound inside the cell and not inert, and nothing else
     free = opensites(cell)
-    isempty(free) && return ACCEPT
+    vectors = _candidatelatticevectors(free, rules)
 
-    metarules = bindingrules(cell)
-    vectors = _candidatelatticevectors(free, metarules)
-    isempty(vectors) && return ACCEPT
-
+    # how far the cell reaches: its particle centers spread over `diameter`, and the widest
+    # particle carries it `radius` further at each end
     parts = cell.particles
-    reach = maximum(norm(p.pose.x - q.pose.x) for p in parts, q in parts)
-    radius = maximum(bounding_radius(species(metarules, speciesindex(p))) for p in parts)
-    search = _ShellSearch(
-        cell, vectors, [first(b.vertices) for b in free], nv(graphrep(cell)), reach, radius
+    diameter = maximum(norm(p.pose.x - q.pose.x) for p in parts, q in parts)
+    radius = maximum(bounding_radius(species(rules, speciesindex(p))) for p in parts)
+    return _ShellSearch(
+        cell, vectors, [first(b.vertices) for b in free], nv(graphrep(cell)), diameter + 2radius, radius
     )
-    emit(_, contacts) = f(Tiling(cell, contacts), order)
-    return _tilings!(emit, search, dimension(metarules), Int[], 1)
 end
 
+"""
+    (s::_ShellSearch)(f)
+
+Walk the search, streaming the bonds of every closure it finds to `f` as a vector of
+[`Contact`](@ref)s, and returning the signal `f` stopped it with.
+"""
+(s::_ShellSearch)(f::F) where {F} = _tilings!(f, s, dimension(bindingrules(s.cell)), Int[], 1)
+
 # Collect all translations between aligned and color-compatible `sites`
-function _candidatelatticevectors(sites, rules)
+function _candidatelatticevectors(sites, rules::BindingRules{D}) where {D}
     intmat = interactionmatrix(rules)
-    vecs = typeof(first(sites).pose.x)[]
+    vecs = SVector{D,numtype(rules)}[]
     for s1 in sites, s2 in sites
         intmat[color(s1), color(s2)] || continue
         isaligned(s1, s2) || continue
@@ -641,7 +657,7 @@ function _tilings!(f::F, s::_ShellSearch, maxvecs::Integer, chosen::Vector{Int},
         B = reduce(hcat, s.vectors[chosen])
         closure = rank(B; rtol=_tol(B)) == length(chosen) ? _closure(s, chosen) : nothing
         if closure !== nothing
-            signal = f(chosen, closure)
+            signal = f(closure)
             signal == BREAK && return BREAK
             signal != REJECT && _tilings!(f, s, maxvecs, chosen, idx + 1) == BREAK && return BREAK
         end
@@ -671,7 +687,7 @@ function _closure(s::_ShellSearch, chosen::Vector{Int})
     contacts = Contact[]
     bought = zeros(Int, length(chosen))
 
-    for (m, t) in _neighborcells(s, chosen)
+    for (coords, t) in _neighborcells(s, chosen)
         for part in parts
             ov, cts = _overlap_and_contacts(parts, translate(part, t), rules)
             ov && return nothing
@@ -684,7 +700,7 @@ function _closure(s::_ShellSearch, chosen::Vector{Int})
                 partner[v1], partner[v2] = v2, v1
                 push!(contacts, contact)
                 # the copy is a translate along the last vector it moves on, so credit that one
-                bought[findlast(!iszero, m)] += 1
+                bought[findlast(!iszero, coords)] += 1
             end
         end
     end
@@ -699,32 +715,31 @@ end
 function _neighborcells(s::_ShellSearch, chosen::Vector{Int})
     basis = s.vectors[chosen]
     B = reduce(hcat, basis)
-    # a vector no longer than `span` has coefficients bounded by the rows of the left inverse
-    P = B \ _eye(B)
-    span = s.reach + 2 * s.radius
-    bound = [floor(Int, span * norm(view(P, i, :))) for i in eachindex(basis)]
+    # a vector no longer than the cell is wide has coefficients bounded by the dual basis, which
+    # for independent columns is the left inverse
+    dual = inv(B' * B) * B'
+    bound = [floor(Int, s.span * norm(view(dual, i, :))) for i in eachindex(basis)]
 
     out = Tuple{NTuple{length(chosen),Int},eltype(basis)}[]
-    for m in Iterators.product(((-bound[i]):bound[i] for i in eachindex(basis))...)
-        all(iszero, m) && continue
-        t = sum(m[i] * basis[i] for i in eachindex(basis))
-        _withinreach(s, t) && push!(out, (m, t))
+    for coords in Iterators.product(((-bound[i]):bound[i] for i in eachindex(basis))...)
+        all(iszero, coords) && continue
+        t = sum(coords[i] * basis[i] for i in eachindex(basis))
+        _withinreach(s, t) && push!(out, (coords, t))
     end
     return out
 end
 
-# Whether a copy displaced by `t` can reach the cell at all: the two overlap only where the cell's
-# own spread along `t` reaches across it, and each end reaches a particle's radius further.
+# Return `true` if a copy displaced by `t` can touch the underlying cell
 function _withinreach(s::_ShellSearch, t)
-    d = norm(t)
-    d > 0 || return false
-    lo, hi = extrema(dot(p.pose.x, t / d) for p in s.cell.particles)
-    return d <= hi - lo + 2 * s.radius + _tol(t)
+    distance = norm(t)
+    distance > 0 || return false
+    direction = t / distance
+    # project particle positions onto the displacement direction and compute the extremal points
+    lo, hi = extrema(dot(p.pose.x, direction) for p in s.cell.particles)
+    # lo, hi are the particle poses; we need to add the particle bounding sphere around
+    extent = (hi - lo) + 2 * s.radius
+    return distance <= extent + _tol(t)
 end
-
-# `B \ _eye(B)` is the left inverse of a matrix with independent columns, which is what bounds the
-# coefficients of a vector of a given length.
-_eye(B::AbstractMatrix{F}) where {F} = Matrix{F}(I, size(B, 1), size(B, 1))
 
 # The one small number this file compares against. It serves as an absolute tolerance on lengths,
 # where spatial units are O(1), and as a relative one where what is judged is a ratio: `rank`
