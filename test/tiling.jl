@@ -99,14 +99,19 @@
         # the bond joining the two copies belongs to the cell, so it is counted there
         @test all(!isempty(bondtypes(t)) for t in turned)
 
-        # a supercell of a tiling is still a tiling, so raising the bound only adds cells
+        # a supercell describes nothing a smaller cell does not, and a tiling is always reported
+        # by its irreducible cell, so raising the bound adds no repeats of what is already there
         for k in 1:3
             ts = tilings(chainmono; maxorder=k)
-            @test sort(unique(tilingorder(t) for t in ts)) == collect(1:k)
-            @test all(iscomplete(t) for t in ts)
-            # a cell of k copies closes k bonds
-            @test all(length(bondtypes(t)) == tilingorder(t) for t in ts)
+            @test length(ts) == 1
+            @test all(tilingorder(t) == 1 for t in ts)
+            @test all(iscomplete(t) && bondtypes(t) == [1] for t in ts)
         end
+
+        # and nothing that comes back can be folded further, whatever it was grown from: a cell
+        # holding two copies of a smaller one carries a translation its lattice does not
+        @test all(isnothing(Roly._fold(t)) for t in tilings(sqmono; maxorder=3))
+        @test all(isnothing(Roly._fold(t)) for t in tilings(mono; maxorder=2))
     end
 
     # a cell's sites are read off the cell, not off the meta-species the search grows it from.

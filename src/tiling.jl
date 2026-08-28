@@ -33,22 +33,28 @@ Assemble the tiling whose cell is `cell` and whose translates close the bonds `p
 [`Contact`](@ref) per bond in `cell`'s own vertex numbering.
 
 Neither the cell nor the lattice is taken as given. Both are read back off the graph once it is
-canonically labeled: where the structure is cut, which frame it sits in, and which translations
-generate it all follow from that labeling and not from how the search arrived.
+canonically labeled: how large a cell the structure needs, where it is cut, which frame it sits
+in, and which translations generate it all follow from that labeling and not from how the search
+arrived.
 """
-function Tiling(cell::Polyform{D}, periodic) where {D}
-    rules = bindingrules(cell)
-    g = NautyDiGraph(0)
-    for part in cell.particles
-        blockdiag!(g, graphrep(species(rules, speciesindex(part))))
-    end
-
+function Tiling(cell::Polyform, periodic)
     # the cell's own bonds, read back into original vertex order, and then the periodic ones,
     # which arrive in that order already. Nothing marks which is which: that a bond crosses the
     # cut is a fact about the cut, not about the structure
     pairs = [(toorig(cell, e.src), toorig(cell, e.dst)) for e in exterior_edges(cell)]
     for contact in periodic, (v1, v2) in contact_pairing(contact)
         push!(pairs, (v1, v2))
+    end
+    return _tiling(bindingrules(cell), copy(cell.particles), pairs)
+end
+
+# The tiling of `particles` bonded at the graph vertex pairs `pairs`, in those particles' own
+# numbering. Reduced to its irreducible cell before it is returned, so no tiling ever exists that
+# a smaller one describes.
+function _tiling(rules::BindingRules{D}, particles, pairs) where {D}
+    g = NautyDiGraph(0)
+    for part in particles
+        blockdiag!(g, graphrep(species(rules, speciesindex(part))))
     end
     for (u, v) in pairs
         _addmarker!(g, rules, u, v)
@@ -57,13 +63,101 @@ function Tiling(cell::Polyform{D}, periodic) where {D}
     perm, autg = nauty(g; canonize=true)
     cvs = collect(Int, perm)
     P, S, G, V = particletype(rules), typeof(rules), typeof(g), SVector{D,numtype(rules)}
-    t = Tiling{D,P,S,G,V}(
-        g, convert(Int, autg.n), cvs, invperm(cvs), copy(cell.particles), rules, V[]
-    )
+    t = Tiling{D,P,S,G,V}(g, convert(Int, autg.n), cvs, invperm(cvs), particles, rules, V[])
     _canonicalcut!(t)
     _canonicalframe!(t)
     append!(t.vectors, _latticebasis(t))
-    return t
+
+    smaller = _fold(t)
+    return isnothing(smaller) ? t : _tiling(rules, smaller...)
+end
+
+"""
+    _fold(t::Tiling)
+
+Return `(particles, pairs)` for the tiling `t` repeats, or `nothing` if `t` is already irreducible.
+
+A cell that is several copies of a smaller one describes a structure a smaller cell describes too,
+and the two are the same tiling however different their graphs look. The extra translations are
+found exactly: any translation of the structure carries the first particle onto some particle of
+the cell, so every coset of them modulo the lattice is `xⱼ - x₁` for some `j`, and the finitely
+many such differences can each be tested against the whole cell. What passes generates the full
+translation group.
+
+One particle of each orbit is then kept. Which one does not matter, since the cell is cut and
+framed again from scratch, and it is that cut which places the survivors against one another.
+"""
+function _fold(t::Tiling)
+    parts = t.particles
+    cosets = _extratranslations(t)
+    isempty(cosets) && return nothing
+
+    orbit = zeros(Int, length(parts))
+    reps = Int[]
+    for i in eachindex(parts)
+        orbit[i] == 0 || continue
+        push!(reps, i)
+        orbit[i] = length(reps)
+        for j in (i + 1):length(parts)
+            orbit[j] == 0 || continue
+            _sametranslate(parts[i], parts[j], cosets, latticevectors(t)) && (orbit[j] = length(reps))
+        end
+    end
+
+    rules = bindingrules(t)
+    lead = Int[]
+    for r in reps
+        push!(lead, isempty(lead) ? 1 : last(lead) + nv(graphrep(species(rules, speciesindex(parts[r])))))
+    end
+    kept = [typeof(p)(p.pose, lead[k], speciesindex(p)) for (k, p) in enumerate(parts[reps])]
+
+    # a bond onto a dropped particle is a bond onto the translate that survived it, and a bond and
+    # its own translates are one bond of the smaller cell, so the pairs collapse
+    onto(v) = let p = _vertex_to_particle_site(t, v; canonidxs=false).particle
+        lead[orbit[p]] + v - leadingvertex(parts[p])
+    end
+    folded = unique!([minmax(onto(u), onto(v)) for (_, (u, v)) in _markers(t)])
+    return kept, folded
+end
+
+# The translations of `t` that its lattice does not already contain, one per coset. A candidate
+# moves the first particle onto another; it is a translation of the structure when it moves every
+# particle onto one, up to the lattice.
+function _extratranslations(t::Tiling)
+    parts = t.particles
+    basis = latticevectors(t)
+    out = eltype(t.vectors)[]
+    for j in 2:length(parts)
+        _samepose(parts[1], parts[j]) || continue
+        v = parts[j].pose.x - parts[1].pose.x
+        any(w -> _inlattice(v - w, basis), out) && continue
+        all(p -> any(q -> _samepose(p, q) && _inlattice(p.pose.x + v - q.pose.x, basis), parts),
+            parts) || continue
+        push!(out, v)
+    end
+    return out
+end
+
+# A translation carries a particle onto another only if the two wear the same species in the same
+# orientation.
+_samepose(a::Particle, b::Particle) =
+    speciesindex(a) == speciesindex(b) && a.pose.psi ≈ b.pose.psi
+
+# Whether one particle is another shifted by a translation the lattice does not contain.
+function _sametranslate(a::Particle, b::Particle, cosets, basis)
+    _samepose(a, b) || return false
+    d = b.pose.x - a.pose.x
+    return any(c -> _inlattice(d - c, basis), cosets)
+end
+
+# Whether `v` is an integer combination of `basis`, which for a lattice basis is to say `v` lies
+# in the lattice.
+function _inlattice(v, basis)
+    isempty(basis) && return norm(v) < _tol(v)
+    B = reduce(hcat, basis)
+    c = B \ v
+    norm(B * c - v) < _tol(v) || return false
+    return all(x -> abs(x - round(x)) < _tol(v), c)
 end
 
 # Put the cell in the frame of its first particle: that particle at the origin, unrotated. The

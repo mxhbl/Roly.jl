@@ -171,6 +171,7 @@ isinert
 ## Polyforms
 
 ```@docs
+AbstractPolyform
 Polyform
 ParticleSite
 nparticles
@@ -211,6 +212,7 @@ growthwitness
 chainstatebound
 canchain
 tilings
+tilingenum
 Tiling
 unitcell
 latticevectors
