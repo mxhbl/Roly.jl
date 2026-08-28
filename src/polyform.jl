@@ -941,12 +941,24 @@ function opensitelocs(poly::AbstractPolyform)
     return [l for (l, _, s) in _exposed(poly) if !isinert(rules, color(s))]
 end
 
-# The open sites by their index among all of `poly`'s sites, for callers that hold one array per
-# site and would otherwise have to convert every address back with `siteindex`.
-function _opensiteindices(poly::AbstractPolyform)
+"""
+    opensites(poly::AbstractPolyform)
+
+The [`BindingSite`](@ref) of every site of `poly` a partner can still attach through, in canonical
+order: [`opensitelocs`](@ref) resolved.
+"""
+function opensites(poly::AbstractPolyform)
     rules = bindingrules(poly)
-    return [i for (_, i, s) in _exposed(poly) if !isinert(rules, color(s))]
+    return [s for (_, _, s) in _exposed(poly) if !isinert(rules, color(s))]
 end
+
+"""
+    exposedsites(poly::AbstractPolyform)
+
+The [`BindingSite`](@ref) of every *unbound* site of `poly`, in canonical order: 
+[`exposedsitelocs`](@ref) resolved, the sites no rule can use included.
+"""
+exposedsites(poly::AbstractPolyform) = [s for (_, _, s) in _exposed(poly)]
 
 """
     _deletable_species(poly; target, dist, queue)

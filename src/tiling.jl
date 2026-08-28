@@ -573,29 +573,28 @@ end
 struct _ShellSearch{PF,V,F}
     cell::PF                 # the candidate cell, as the meta-polyform it was grown as
     vectors::Vector{V}
-    ofvertex::Vector{Int}    # first vertex of a site -> its index among the cell's, else 0
-    spent::BitVector         # sites no translate can use: bound inside the cell, or inert
+    free::Vector{Int}        # first vertex of every site a translate may still use
+    nvertices::Int           # how many vertices the cell's graph has
     reach::F                 # how far apart two of the cell's particles sit
     radius::F                # how far past its center the widest particle reaches
 end
 
 # Every tiling one candidate cell admits, streamed to `f`.
 function _celltilings(f::F, cell::Polyform, order::Integer) where {F}
-    open = _opensiteindices(cell)
-    isempty(open) && return ACCEPT
-
-    sites = collect(bindingsites(cell))
-    spent = trues(length(sites)) # sites that are already used up
-    spent[open] .= false
+    # a translate may use a site that is unbound inside the cell and not inert, and nothing else
+    free = opensites(cell)
+    isempty(free) && return ACCEPT
 
     metarules = bindingrules(cell)
-    vectors = _candidatelatticevectors(view(sites, open), metarules)
+    vectors = _candidatelatticevectors(free, metarules)
     isempty(vectors) && return ACCEPT
 
     parts = cell.particles
     reach = maximum(norm(p.pose.x - q.pose.x) for p in parts, q in parts)
     radius = maximum(bounding_radius(species(metarules, speciesindex(p))) for p in parts)
-    search = _ShellSearch(cell, vectors, _siteofvertex(sites), spent, reach, radius)
+    search = _ShellSearch(
+        cell, vectors, [first(b.vertices) for b in free], nv(graphrep(cell)), reach, radius
+    )
     emit(_, contacts) = f(Tiling(cell, contacts), order)
     return _tilings!(emit, search, dimension(metarules), Int[], 1)
 end
@@ -663,9 +662,12 @@ end
 function _closure(s::_ShellSearch, chosen::Vector{Int})
     parts = s.cell.particles
     rules = bindingrules(s.cell)    # the *meta* rules: the cell is translated as meta-particles
-    # what each of the cell's sites is bonded to: 0 while it is free, -1 for one no translate can
-    # use. A site carries at most one bond, so a second claim on one is a contradiction
-    partner = [s.spent[i] ? -1 : 0 for i in eachindex(s.spent)]
+    # what each of the cell's sites is bonded to, indexed by the vertex a site starts at, which is
+    # how a contact names one. `-1` for a vertex no translate can use, being a site already bound
+    # inside the cell, an inert one, or no site's first vertex at all; `0` for one still free. A
+    # site carries at most one bond, so a second claim on one is a contradiction
+    partner = fill(-1, s.nvertices)
+    partner[s.free] .= 0
     contacts = Contact[]
     bought = zeros(Int, length(chosen))
 
@@ -674,14 +676,12 @@ function _closure(s::_ShellSearch, chosen::Vector{Int})
             ov, cts = _overlap_and_contacts(parts, translate(part, t), rules)
             ov && return nothing
             for contact in cts
-                # both endpoints must be sites of the cell
-                i1, i2 = _lookup(s, contact.vs1), _lookup(s, contact.vs2)
-                (i1 == 0 || i2 == 0) && return nothing
+                v1, v2 = first(contact.vs1), first(contact.vs2)
                 # the shell runs both ways, so the copies on either side both report the bond
                 # between them; the second sighting is that same bond, not a second claim
-                partner[i1] == i2 && partner[i2] == i1 && continue
-                (partner[i1] == 0 && partner[i2] == 0) || return nothing
-                partner[i1], partner[i2] = i2, i1
+                partner[v1] == v2 && partner[v2] == v1 && continue
+                (partner[v1] == 0 && partner[v2] == 0) || return nothing
+                partner[v1], partner[v2] = v2, v1
                 push!(contacts, contact)
                 # the copy is a translate along the last vector it moves on, so credit that one
                 bought[findlast(!iszero, m)] += 1
@@ -721,18 +721,6 @@ function _withinreach(s::_ShellSearch, t)
     lo, hi = extrema(dot(p.pose.x, t / d) for p in s.cell.particles)
     return d <= hi - lo + 2 * s.radius + _tol(t)
 end
-
-# A contact comes back as the vertex range its site occupies, and a translated copy keeps the
-# ranges of the cell it was translated from, so the first vertex identifies the site. An array
-# rather than a `Dict`: the vertices are a contiguous range, so indexing is the whole lookup.
-function _siteofvertex(sites)
-    ofvertex = zeros(Int, maximum(s -> last(s.vertices), sites; init=0))
-    for (i, s) in enumerate(sites)
-        ofvertex[first(s.vertices)] = i
-    end
-    return ofvertex
-end
-_lookup(s::_ShellSearch, vs) = first(vs) <= length(s.ofvertex) ? s.ofvertex[first(vs)] : 0
 
 # `B \ _eye(B)` is the left inverse of a matrix with independent columns, which is what bounds the
 # coefficients of a vector of a given length.

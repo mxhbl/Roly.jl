@@ -179,6 +179,8 @@ bindingrules
 composition
 canonbindingsite
 canonbindingsites
+exposedsites
+opensites
 exposedsitelocs
 opensitelocs
 rotationgroup(::Polyform)
