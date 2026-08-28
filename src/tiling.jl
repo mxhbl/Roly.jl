@@ -201,7 +201,7 @@ function _canonicalcut!(t::Tiling)
         step = _reachbond(t, placed)
         isnothing(step) && break
         j, delta = step
-        parts[j] = parts[j] + delta
+        parts[j] = translate(parts[j], delta)
         placed[j] = true
     end
     return t
@@ -420,9 +420,10 @@ the graph.
 function _latticebasis(t::Tiling)
     vs = _translations(t)
     isempty(vs) && return vs
-    # the same tolerance `_independent` uses, for the same reason: machine precision would call
-    # near-parallel translations independent and overcount the rank
-    r = rank(reduce(hcat, vs); rtol=_tol(first(vs)))
+    # `rank`'s own tolerance is relative to machine precision, which counts translations that are
+    # parallel to anything we care about as independent and overstates the rank
+    B = reduce(hcat, vs)
+    r = rank(B; rtol=_tol(B))
     for idx in _indexsubsets(length(vs), r)
         _generates(vs[idx], vs) && return _shortestbasis(vs[idx], vs)
     end
@@ -452,7 +453,7 @@ function _shortestbasis(basis, preferred)
     out = eltype(basis)[]
     for v in cands
         push!(out, v)
-        _independent(out) || pop!(out)
+        rank(reduce(hcat, out); rtol=_tol(B)) == length(out) || pop!(out)
         length(out) == r && break
     end
     _generates(out, basis) ||
@@ -470,8 +471,8 @@ end
 
 # Whether every vector of `vs` is an integer combination of the independent vectors `basis`.
 function _generates(basis, vs)
-    _independent(basis) || return false
     B = reduce(hcat, basis)
+    rank(B; rtol=_tol(B)) == length(basis) || return false
     return all(vs) do v
         c = B \ v
         norm(B * c - v) < _tol(v) || return false
@@ -641,7 +642,8 @@ function _tilings!(f::F, s::_ShellSearch, maxvecs::Integer, chosen::Vector{Int},
         # coordinate being meaningless without a unique representation; the condition it stands in
         # for is that the bonded translations generate the chosen lattice, which `_generates`
         # already tests, and which implies the connectedness `bought` was there to enforce.
-        closure = _independent(s.vectors[chosen]) ? _closure(s, chosen) : nothing
+        B = reduce(hcat, s.vectors[chosen])
+        closure = rank(B; rtol=_tol(B)) == length(chosen) ? _closure(s, chosen) : nothing
         if closure !== nothing
             signal = f(chosen, closure)
             signal == BREAK && return BREAK
@@ -672,7 +674,7 @@ function _closure(s::_ShellSearch, chosen::Vector{Int})
 
     for (m, t) in _neighborcells(s, chosen)
         for part in parts
-            ov, cts = _overlap_and_contacts(parts, part + t, rules)
+            ov, cts = _overlap_and_contacts(parts, translate(part, t), rules)
             ov && return nothing
             for contact in cts
                 # both endpoints must be sites of the cell
@@ -735,27 +737,15 @@ function _siteofvertex(sites)
 end
 _lookup(s::_ShellSearch, vs) = first(vs) <= length(s.ofvertex) ? s.ofvertex[first(vs)] : 0
 
-"""
-    _independent(vs)
-
-Whether the vectors `vs` span a parallelepiped of positive volume.
-
-`rank` would answer the same question, but its tolerance is relative to machine precision, so
-vectors that are parallel to within any tolerance we care about still count as independent. The
-Gram determinant is the squared volume, and dividing by the lengths makes it scale free: it runs
-from 1 for orthogonal vectors down to 0 as they collapse, whatever units the system is in.
-"""
-function _independent(vs)
-    B = reduce(hcat, vs)
-    return det(B' * B) > (_tol(first(vs)) * prod(norm, vs))^2
-end
-
 # `B \ _eye(B)` is the left inverse of a matrix with independent columns, which is what bounds the
 # coefficients of a vector of a given length.
 _eye(B::AbstractMatrix{F}) where {F} = Matrix{F}(I, size(B, 1), size(B, 1))
 
-# spatial units are O(1), so use sqrt(eps) for absolute tolerance
-_tol(::AbstractVector{F}) where {F} = sqrt(eps(F))
+# The one small number this file compares against. It serves as an absolute tolerance on lengths,
+# where spatial units are O(1), and as a relative one where what is judged is a ratio: `rank`
+# measures a singular value against the largest, which is the scale-free question to ask of it and
+# the one that survives a system built at a different size.
+_tol(::AbstractArray{F}) where {F} = sqrt(eps(F))
 
 # A vector and its negative generate the same translations, so pick the one whose first
 # significant component is positive.

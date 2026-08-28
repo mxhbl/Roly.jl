@@ -46,6 +46,23 @@ function Polyform(rules::BindingRules{D}, i::Integer) where {D}
     return Polyform{D,Particle{P},typeof(rules),typeof(g)}(g, symmetrynumber(ps), cvs, invperm(cvs), [part], rules)
 end
 
+"""
+    translate!(p::AbstractPolyform, v)
+
+Shift every particle of `p` by the vector `v`, leaving its graph and orientations untouched.
+"""
+function translate!(p::AbstractPolyform, v)
+    map!(q -> translate(q, v), p.particles, p.particles)
+    return p
+end
+
+"""
+    translate(p::AbstractPolyform, v)
+
+Return a copy of `p` shifted by the vector `v`.
+"""
+translate(p::AbstractPolyform, v) = translate!(copy(p), v)
+
 function Base.copy(p::Polyform)
     return typeof(p)(
         copy(p.graphrep), p.sigma, copy(p.canon2orig), copy(p.orig2canon), copy(p.particles), p.bindingrules

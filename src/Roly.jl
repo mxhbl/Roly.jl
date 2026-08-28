@@ -6,7 +6,7 @@ using Graphs, NautyGraphs
 using ReverseSearch
 
 # Geometry primitives
-export Pose, dimension
+export Pose, dimension, translate, translate!
 public numtype, posetype, sitetype, particletype
 export Rotation, Angle2d, RotXYZ, RotMatrix3, rotation_angle, rotation_axis, SVector
 

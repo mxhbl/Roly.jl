@@ -67,7 +67,7 @@ function MetaParticleSpecies(poly::Polyform{D}, sites; colors=nothing) where {D}
     # derived from just the site poses, which would be unaware of shape of the polyform.
     group = rotationgroup(poly)
     c = rotationcenter(poly)
-    poses, sitesyms = [s.pose + (-c) for s in open], [s.sitesym for s in open]
+    poses, sitesyms = [translate(s.pose, -c) for s in open], [s.sitesym for s in open]
     orbits = siteorbits(poses, sitesyms, cols; group)
     stabs = stabilizerorders(poses, sitesyms, cols; group)
     metasites = map(1:n) do i
@@ -102,7 +102,7 @@ _rotationcandidates(ps::MetaParticleSpecies) = rotationgroup(polyform(ps))
 
 function _sitegeometry(ps::MetaParticleSpecies)
     c = rotationcenter(polyform(ps))
-    return ([s.pose + (-c) for s in ps.sites], [s.sitesym for s in ps.sites], [sitelabel(ps, i) for i in 1:nsites(ps)])
+    return ([translate(s.pose, -c) for s in ps.sites], [s.sitesym for s in ps.sites], [sitelabel(ps, i) for i in 1:nsites(ps)])
 end
 
 # Label every open-site vertex by its symmetry orbit, placed above every interior label.

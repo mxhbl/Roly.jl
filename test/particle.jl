@@ -26,7 +26,7 @@ using Roly: Particle, graphvertices, leadingvertex, speciesindex, overlap, could
     @test length(collect(bindingsites(part, rules))) == nsites(part, rules)
 
     v = SVector(3.0, 0.0)
-    part_far = part + v
+    part_far = translate(part, v)
     @test part_far.pose.x ≈ v
 
     rot = Angle2d(π/2)
