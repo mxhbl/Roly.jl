@@ -420,14 +420,29 @@ the graph.
 function _latticebasis(t::Tiling)
     vs = _translations(t)
     isempty(vs) && return vs
+    return _shortestbasis(_generatingsubset(vs), vs)
+end
+
+"""
+    _generatingsubset(vs)
+
+An independent subset of `vs` that generates every one of them over the integers.
+
+Independent is not enough on its own: `v` and `w` span the same directions as `v`, `w` and
+`(v + w) / 2` while generating a coarser lattice, so the subset has to reproduce the rest and not
+merely their span. Every subset is tried, so one is found whenever one exists.
+"""
+function _generatingsubset(vs)
     # `rank`'s own tolerance is relative to machine precision, which counts translations that are
     # parallel to anything we care about as independent and overstates the rank
     B = reduce(hcat, vs)
-    r = rank(B; rtol=_tol(B))
-    for idx in _indexsubsets(length(vs), r)
-        _generates(vs[idx], vs) && return _shortestbasis(vs[idx], vs)
+    for idx in _indexsubsets(length(vs), rank(B; rtol=_tol(B)))
+        _generates(vs[idx], vs) && return vs[idx]
     end
-    return error("Internal error: a tiling's periodic bonds name no basis of its lattice. Please file an issue.")
+    return error(
+        "Internal error: a set of translations contains no basis of the lattice it generates, " *
+        "which the tiling search does not handle. Please file an issue."
+    )
 end
 
 # The shortest basis of the lattice `basis` spans. Every lattice vector no longer than the longest
@@ -688,9 +703,7 @@ function _closure(s::_ShellSearch, basis)
     partner = fill(-1, s.nvertices)
     partner[s.free] .= 0
     contacts = Contact[]
-    # whether each chosen vector carries a bond. A vector that carries none contributes only
-    # copies nothing holds on to, which is a disconnected union rather than a tiling
-    contributes = falses(length(basis))
+    bonded = eltype(basis)[]   # the translations that carry a bond, one entry each
 
     for coords in _neighborcells(s, basis)
         t = sum(coords[i] * basis[i] for i in eachindex(basis))
@@ -705,17 +718,17 @@ function _closure(s::_ShellSearch, basis)
                 (partner[v1] == 0 && partner[v2] == 0) || return nothing
                 partner[v1], partner[v2] = v2, v1
                 push!(contacts, contact)
-                # `coords` is where the copy sits, and so also the displacement between the two
-                # sites this bond joins -- the copy carries its sites with it. Crediting the last
-                # vector that displacement moves along sorts the bonds among the chosen vectors
-                # without overlap or omission, which is all that is needed to ask whether any of
-                # them sits idle. Which vector a mixed displacement is credited to is a
-                # convention, and the TODO in `_tilings!` is where it stops being one
-                contributes[findlast(!iszero, coords)] = true
+                # `t` is where the copy sits, and so also the displacement between the two sites
+                # this bond joins, the copy having carried its sites with it
+                any(w -> w ≈ t, bonded) || push!(bonded, t)
             end
         end
     end
-    all(contributes) || return nothing
+    # the bonds have to hold together the lattice that was chosen. They always sit at its points,
+    # so they generate no more than it; generating less means the copies fall into structures that
+    # never meet, which is a periodic packing of several tilings rather than one tiling
+    isempty(bonded) && return nothing
+    _generates(_generatingsubset(bonded), basis) || return nothing
     return contacts
 end
 
