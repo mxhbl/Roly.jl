@@ -55,8 +55,9 @@ function _tiling(rules::BindingRules{D}, particles, pairs) where {D}
     for part in particles
         blockdiag!(g, graphrep(species(rules, speciesindex(part))))
     end
+    marker = _markerlabel(rules)
     for (u, v) in pairs
-        _addmarker!(g, rules, u, v)
+        _addmarker!(g, marker, u, v)
     end
 
     perm, autg = nauty(g; canonize=true)
@@ -247,8 +248,8 @@ _markerlabel(rules::BindingRules) = maximum(maximum(labels(graphrep(species(rule
 # nothing, and the tiling would be indistinguishable from one without the bond. A fresh vertex
 # collides with nothing. Every bond is marked, the cell's own alongside the periodic ones, so
 # what the marks record is that a bond exists and not where the structure was cut.
-function _addmarker!(g, rules::BindingRules, u::Integer, v::Integer)
-    add_vertices!(g, 1; vertex_labels=[_markerlabel(rules)])
+function _addmarker!(g, marker::Integer, u::Integer, v::Integer)
+    add_vertices!(g, 1; vertex_labels=[marker])
     m = nv(g)
     add_edge!(g, u, m)
     add_edge!(g, m, u)
