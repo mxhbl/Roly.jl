@@ -250,4 +250,48 @@
         @test cantile(cubic; maxtilesize=1) !== nothing
         @test cantile(octa; maxtilesize=2) === nothing
     end
+
+    @testset "a tiling describes a structure that exists" begin
+        # A tiling claims that copies of its cell at every lattice point form one valid structure.
+        # Build that patch and check it against the geometry, which is the half the graph a tiling
+        # is identified by cannot speak about.
+        function patch(t; reps)
+            cell = unitcell(t)
+            vs = latticevectors(t)
+            center, outer = cell.particles, eltype(cell.particles)[]
+            for c in Iterators.product(ntuple(_ -> (-reps):reps, length(vs))...)
+                all(iszero, c) && continue
+                shift = sum(c[i] * vs[i] for i in eachindex(vs))
+                append!(outer, (Roly.translate(p, shift) for p in center))
+            end
+            return center, outer
+        end
+
+        cubic = BindingRules([1 1 1 1], PolyhedronParticleSpecies(Cube(); colors=fill(1, 6)))
+        cubemono = first(polygen(cubic; maxsize=1))
+        for (poly, kw) in ((chainmono, (;)), (sqmono, (; maxorder=2)), (cubemono, (;)))
+            for t in tilings(poly; kw...)
+                cell = unitcell(t)
+                rules = bindingrules(cell)
+
+                # nothing anywhere in the patch overlaps, rests on a face no bond can use, or
+                # meets misaligned -- all three of which `_overlap_and_contacts` refuses
+                center, outer = patch(t; reps=1)
+                everything = vcat(center, outer)
+                @test all(eachindex(everything)) do i
+                    return !first(Roly._overlap_and_contacts(view(everything, 1:(i - 1)), everything[i], rules))
+                end
+
+                # every bond the tiling counts is really formed, and is seen once from each side,
+                # the cell having a neighbour in both directions along every translation
+                _, far = patch(t; reps=2)
+                met = sum(p -> length(last(Roly._overlap_and_contacts(far, p, rules))), center)
+                @test met == 2 * (nbonds(t) - nbonds(cell))
+
+                # and the sites add up: every bond spends two of them, and what is left over is
+                # exactly what the tiling reports as still exposed
+                @test 2 * nbonds(t) + length(exposedsitelocs(t)) == nsites(cell)
+            end
+        end
+    end
 end
