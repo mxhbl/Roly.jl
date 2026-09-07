@@ -85,4 +85,16 @@ using Roly: PolygonParticleSpecies, UnitTriangle, UnitSquare, UnitHexagon,
 
     @test symmetrynumber(UnitHexagon) == 1
     @test symmetrynumber(PolygonParticleSpecies(6; colors=[1,1,1,1,1,1])) == 6
+
+    # the symmetric counterparts differ from the defaults in coloring alone: one color throughout,
+    # so the body keeps its rotation group where a color per edge leaves it none
+    for (plain, sym, n) in ((UnitTriangle, SymmetricUnitTriangle, 3),
+                            (UnitSquare, SymmetricUnitSquare, 4),
+                            (UnitHexagon, SymmetricUnitHexagon, 6))
+        @test [color(bindingsite(plain, i)) for i in 1:n] == 1:n
+        @test [color(bindingsite(sym, i)) for i in 1:n] == fill(1, n)
+        @test [bindingsite(plain, i).pose for i in 1:n] == [bindingsite(sym, i).pose for i in 1:n]
+        @test symmetrynumber(plain) == 1
+        @test symmetrynumber(sym) == n
+    end
 end

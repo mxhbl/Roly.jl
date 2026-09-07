@@ -133,3 +133,34 @@ const UnitSquare = PolygonParticleSpecies(4)
 A regular hexagon with unit-length edges and one binding site per edge.
 """
 const UnitHexagon = PolygonParticleSpecies(6)
+
+
+"""
+    SymmetricUnitTriangle
+
+An equilateral triangle with unit-length edges, every edge the same color.
+
+Where [`UnitTriangle`](@ref) gives each edge a color of its own, this one leaves the body its full
+rotation group, so `symmetrynumber` is 3 rather than 1 and edges bond interchangeably.
+"""
+const SymmetricUnitTriangle = PolygonParticleSpecies(3; colors=fill(1, 3))
+
+"""
+    SymmetricUnitSquare
+
+A square with unit-length edges, every edge the same color.
+
+Where [`UnitSquare`](@ref) gives each edge a color of its own, this one leaves the body its full
+rotation group, so `symmetrynumber` is 4 rather than 1 and edges bond interchangeably.
+"""
+const SymmetricUnitSquare = PolygonParticleSpecies(4; colors=fill(1, 4))
+
+"""
+    SymmetricUnitHexagon
+
+A regular hexagon with unit-length edges, every edge the same color.
+
+Where [`UnitHexagon`](@ref) gives each edge a color of its own, this one leaves the body its full
+rotation group, so `symmetrynumber` is 6 rather than 1 and edges bond interchangeably.
+"""
+const SymmetricUnitHexagon = PolygonParticleSpecies(6; colors=fill(1, 6))

@@ -196,3 +196,59 @@ A uniform antiprism over a regular `n`-gon with edge length `a`, with one bindin
 face. Rotation group `D_n`, except for `UnitAntiprism(3)` which is a regular octahedron.
 """
 UnitAntiprism(n::Integer, a::Real=1.0; kwargs...) = PolyhedronParticleSpecies(Antiprism(n, a); kwargs...)
+
+
+"""
+    SymmetricUnitTetrahedron
+
+A regular tetrahedron with unit-length edges, every face the same color.
+
+Where [`UnitTetrahedron`](@ref) gives each face a color of its own, this one leaves the body its full
+rotation group, so `symmetrynumber` reports that group's order rather than 1 and faces bond
+interchangeably.
+"""
+const SymmetricUnitTetrahedron = PolyhedronParticleSpecies(Tetrahedron(); colors=fill(1, nfaces(Tetrahedron())))
+
+"""
+    SymmetricUnitCube
+
+A cube with unit-length edges, every face the same color.
+
+Where [`UnitCube`](@ref) gives each face a color of its own, this one leaves the body its full
+rotation group, so `symmetrynumber` reports that group's order rather than 1 and faces bond
+interchangeably.
+"""
+const SymmetricUnitCube = PolyhedronParticleSpecies(Cube(); colors=fill(1, nfaces(Cube())))
+
+"""
+    SymmetricUnitOctahedron
+
+A regular octahedron with unit-length edges, every face the same color.
+
+Where [`UnitOctahedron`](@ref) gives each face a color of its own, this one leaves the body its full
+rotation group, so `symmetrynumber` reports that group's order rather than 1 and faces bond
+interchangeably.
+"""
+const SymmetricUnitOctahedron = PolyhedronParticleSpecies(Octahedron(); colors=fill(1, nfaces(Octahedron())))
+
+"""
+    SymmetricUnitDodecahedron
+
+A regular dodecahedron with unit-length edges, every face the same color.
+
+Where [`UnitDodecahedron`](@ref) gives each face a color of its own, this one leaves the body its full
+rotation group, so `symmetrynumber` reports that group's order rather than 1 and faces bond
+interchangeably.
+"""
+const SymmetricUnitDodecahedron = PolyhedronParticleSpecies(Dodecahedron(); colors=fill(1, nfaces(Dodecahedron())))
+
+"""
+    SymmetricUnitIcosahedron
+
+A regular icosahedron with unit-length edges, every face the same color.
+
+Where [`UnitIcosahedron`](@ref) gives each face a color of its own, this one leaves the body its full
+rotation group, so `symmetrynumber` reports that group's order rather than 1 and faces bond
+interchangeably.
+"""
+const SymmetricUnitIcosahedron = PolyhedronParticleSpecies(Icosahedron(); colors=fill(1, nfaces(Icosahedron())))

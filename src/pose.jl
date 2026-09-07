@@ -64,8 +64,18 @@ Base.:*(p1::Pose, p2::Pose) = Pose(p1.psi * p2.x + p1.x, p1.psi * p2.psi)
 Base.:*(p::Pose, v::AbstractVector) = p.psi * v + p.x
 Base.:*(R::Rotation, p::Pose) = typeof(p)(R * p.x, R * p.psi)
 Base.:*(p::Pose, R::Rotation) = typeof(p)(p.x, p.psi * R)
-Base.:+(v, p::Pose) = typeof(p)(p.x + v, p.psi)
-Base.:+(p::Pose, v) = v + p
+
+"""
+    translate(x, v)
+
+Return `x` shifted by the vector `v`, its orientation unchanged.
+
+Defined for a [`Pose`](@ref), a `Particle`, a [`BindingSite`](@ref) and an
+[`AbstractPolyform`](@ref). A general rigid motion is `g * x` instead, where `g` is a `Pose`: `*`
+is the group action, and its two sides differ, `g * x` moving `x` in the world frame and `x * g`
+in its own.
+"""
+translate(p::Pose, v) = typeof(p)(p.x + v, p.psi)
 
 Base.inv(p::Pose) =
     let ψinv = inv(p.psi)

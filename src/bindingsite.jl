@@ -63,6 +63,7 @@ Base.hash(b::BindingSite, h::UInt) = hash(b.color, hash(b.vertices, h))
 Base.isless(b1::BindingSite, b2::BindingSite) = isless(b1.vertices, b2.vertices)
 Base.:*(p, site::BindingSite) = BindingSite(site; pose=p * site.pose)
 Base.:*(site::BindingSite, p) = BindingSite(site; pose=site.pose * p)
+translate(site::BindingSite, v) = BindingSite(site; pose=translate(site.pose, v))
 @inline shift_vertices(site::BindingSite, v::Integer) = BindingSite(site; vertices=site.vertices .+ v)
 @inline shift_color(site::BindingSite, c::Integer) = BindingSite(site; color=site.color + c)
 @inline setcolor(site::BindingSite, c::Integer) = BindingSite(site; color=c)
@@ -126,6 +127,23 @@ and need to be caught through canonization.
 @inline _ndistincttwists(bbody::BindingSite, battach::BindingSite) = twistfreedom(bbody, battach) ÷ battach.stab
 
 """
+    Contact(vs1, vs2, twist, ntwists)
+
+Two binding sites found in contact, and how they meet.
+
+`vs1` and `vs2` are the [`graphrep`](@ref) vertex ranges the two sites occupy. `twist` is which of the `ntwists`
+twists the bond admits they are in. See also [`contact_pairing`](@ref),
+"""
+struct Contact
+    vs1::UnitRange{Int}
+    vs2::UnitRange{Int}
+    twist::Int
+    ntwists::Int
+end
+
+Base.show(io::Core.IO, c::Contact) = print(io, "Contact[", c.vs1, "-", c.vs2, ", twist ", c.twist, "/", c.ntwists, "]")
+
+"""
     contact_pairing(vs1::UnitRange, vs2::UnitRange, t=0, ntwists=1)
 
 Return the pairs of graph vertices that should be joined when two bonding binding sites occupying the vertex
@@ -144,6 +162,8 @@ the solutions of
 `gcd(k₁, k₂)` solutions for every `m`, and distinct twists give disjoint solution sets, so the
 pairing count never depends on the twist, and the graph records which twist a bond is in.
 """
+@inline contact_pairing(c::Contact) = contact_pairing(c.vs1, c.vs2, c.twist, c.ntwists)
+
 @inline function contact_pairing(vs1::UnitRange{<:Integer}, vs2::UnitRange{<:Integer}, t::Integer=0, ntwists::Integer=1)
     k1, k2 = length(vs1), length(vs2)
     G = gcd(k1, k2)

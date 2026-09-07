@@ -1,6 +1,6 @@
 mutable struct PolyformAux{BS<:BindingSite}
     seen::Set{NautyDiGraph}
-    attachments::Vector{Tuple{BS,BindingSiteLoc,Int}}
+    attachments::Vector{Tuple{BS,SpeciesSiteLoc,Int}}
 end
 Base.copy(polyaux::PolyformAux) = typeof(polyaux)(copy(polyaux.seen), copy(polyaux.attachments))
 
@@ -18,9 +18,9 @@ function adj!(u::Polyform, v::Polyform, j::Integer, aux::PolyformAux)
     j == 1 && collect_attachments!(aux.attachments, v)
     j > length(aux.attachments) && return nothing
 
-    site, siteloc, t = aux.attachments[j]
+    site, loc, t = aux.attachments[j]
     copy!(u, v)
-    out = raise!(u, site, siteloc, t)
+    out = raise!(u, site, loc, t)
     (ismissing(out) || isnothing(out)) && return out
 
     if graphrep(out) ∈ aux.seen
@@ -56,8 +56,8 @@ the underlying reverse search: `Finished` if the enumeration ran to completion, 
 """
 function polyenum(f, rules::BindingRules; maxsize=Inf, maxstrs=Inf, kwargs...)
     v₀ = Polyform(rules)
-    BS = BindingSite{posetype(rules),numtype(rules)}
-    aux = PolyformAux{BS}(Set{NautyDiGraph}(), Tuple{BS,BindingSiteLoc,Int}[])
+    BS = sitetype(rules)
+    aux = PolyformAux{BS}(Set{NautyDiGraph}(), Tuple{BS,SpeciesSiteLoc,Int}[])
     rsys = RSSystem(ls!, adj!, v₀; aux)
 
     frs = isnothing(f) ? nothing : (v, _) -> f(v, nparticles(v))

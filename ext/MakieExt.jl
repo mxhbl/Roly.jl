@@ -2,13 +2,20 @@ module MakieExt
 
 using Roly
 using Makie
-using LinearAlgebra: dot, normalize
+using LinearAlgebra: dot, norm, normalize
 import Roly: species, bindingrules, polyformplot, polyformplot!, render
+import Roly: Tiling, unitcell, latticevectors, Pose
 import Roly: corners, faces, facevertices, nfaces, facecentroid, facenormal, polyhedron, bounding_radius
 
 @recipe PolyformPlot (poly, ) begin
     bindingrules = nothing
     pose = nothing
+    "How many cells to draw along each lattice vector, when the thing drawn is a `Tiling`."
+    repeats = 2
+    "How solid the repeated cells are drawn against the one cell, for a `Tiling`. `1` draws them alike."
+    ghost = 0.4
+    "Whether to draw a `Tiling`'s lattice vectors, from the cell they repeat."
+    showlattice = true
     Makie.mixin_generic_plot_attributes()...
 end
 
@@ -23,6 +30,56 @@ function Makie.plot!(p::PolyformPlot{<:Tuple{<:ParticleSpecies}})
     args = isnothing(pose) ? (p.poly[],) : (p.poly[], pose)
     plot_particlespecies!(p, args...; rules=p.bindingrules[])
     return p
+end
+
+# A tiling is drawn as a patch of itself: its cell, repeated along each lattice vector. One cell
+# with `repeats = 1`, and enough to read the pattern by default.
+function Makie.plot!(p::PolyformPlot{<:Tuple{<:Tiling}})
+    t = p.poly[]
+    cell = unitcell(t)
+    vs = latticevectors(t)
+    base = p.pose[]
+    n = max(1, p.repeats[])
+    origin = sum(q.pose.x for q in cell.particles) / nparticles(cell)
+    rot = one(typeof(first(cell.particles).pose.psi))
+    place(offset) = (shift = Pose(offset, rot); isnothing(base) ? shift : base * shift)
+
+    # the cell at full strength and its translates behind it, so that the tile itself reads out
+    # of the pattern rather than dissolving into it
+    for m in Iterators.product(ntuple(_ -> 0:(n - 1), length(vs))...)
+        offset = isempty(vs) ? zero(origin) : sum(m[i] * vs[i] for i in eachindex(vs))
+        alpha = all(iszero, m) ? 1 : p.ghost[]
+        plot_polyform!(p, cell, place(offset); rules=bindingrules(cell), alpha)
+    end
+
+    # and the translations themselves, drawn from the cell they carry
+    if p.showlattice[] && !isempty(vs)
+        anchor = isnothing(base) ? origin : (base * Pose(origin, rot)).x
+        D = length(origin)
+        segs = Point{D,Float32}[]
+        for v in vs
+            append!(segs, _openarrow(anchor, anchor + v))
+        end
+        linesegments!(p, segs; color=:black, linewidth=3)
+    end
+    return p
+end
+
+# The segments of an open arrow from `tail` to `head`: the shaft, and two barbs swept back from
+# the point. Drawn rather than asked for, so that the head is a bare `>` and not a filled wedge,
+# which reads as another particle among particles.
+function _openarrow(tail, head; sweep=π / 7, fraction=0.18)
+    D = length(head)
+    u = normalize(head - tail)
+    # any direction across the shaft will do to sweep the barbs into: take the axis least
+    # aligned with it, so that what is left after projecting the shaft out is never small
+    k = argmin(abs.(u))
+    e = typeof(u)(ntuple(i -> i == k ? oneunit(eltype(u)) : zero(eltype(u)), D))
+    w = normalize(e - dot(e, u) * u)
+    len = fraction * norm(head - tail)
+    barb(s) = head - len * (cos(sweep) * u + s * sin(sweep) * w)
+    P = Point{D,Float32}
+    return [P(tail), P(head), P(head), P(barb(1)), P(head), P(barb(-1))]
 end
 
 # Documented on the stub in `Roly`, so that Documenter finds it without loading this extension.
@@ -72,8 +129,10 @@ Draw all particles of `poly` onto `ax`, coloring inert sites with `INERT_COLOR`.
 
 Species that provide a [`particlemesh`](@ref) are merged into one mesh so they depth-sort
 against each other; the rest are drawn one plot per particle.
+
+`alpha` scales the transparency of everything drawn, for showing one polyform behind another.
 """
-function plot_polyform!(ax, poly::Polyform, pose=nothing; kwargs...)
+function plot_polyform!(ax, poly::Polyform, pose=nothing; alpha=1, kwargs...)
     rules = bindingrules(poly)
     pts, tris, cols = Point3f[], NTuple{3,Int}[], RGBAf[]
 
@@ -82,13 +141,15 @@ function plot_polyform!(ax, poly::Polyform, pose=nothing; kwargs...)
         part_pose = isnothing(pose) ? part.pose : pose * part.pose
         geom = particlemesh(ps, part_pose; rules, kwargs...)
         if isnothing(geom)
-            plot_particlespecies!(ax, ps, part_pose; rules, kwargs...)
+            # a species with no mesh form draws itself, so the transparency has to go with it
+            faded = alpha == 1 ? kwargs : (; kwargs..., alpha)
+            plot_particlespecies!(ax, ps, part_pose; rules, faded...)
             continue
         end
         p, t, c = geom
         offset = length(pts)
         append!(pts, p)
-        append!(cols, c)
+        append!(cols, alpha == 1 ? c : [RGBAf(x.r, x.g, x.b, x.alpha * alpha) for x in c])
         for (a, b, d) in t
             push!(tris, (a + offset, b + offset, d + offset))
         end
@@ -102,5 +163,6 @@ include("palette.jl")
 include("plot_polygonparticle.jl")
 include("plot_polyhedronparticle.jl")
 include("plot_patchyparticle.jl")
+include("plot_metaparticle.jl")
 
 end # module

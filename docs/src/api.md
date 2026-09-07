@@ -11,6 +11,8 @@ Pose
 dimension
 numtype
 posetype
+sitetype
+particletype
 ```
 
 ## Binding sites
@@ -30,6 +32,7 @@ twistfreedom(::BindingSite)
 twistfreedom(::BindingSite, ::BindingSite)
 twist
 standard_twist
+Contact
 contact_pairing
 ```
 
@@ -96,6 +99,7 @@ bindingsites
 nsites
 graphrep
 isconvex
+setcolors!
 symmetrynumber
 bounding_radius
 could_contact
@@ -112,6 +116,9 @@ UnitNgon
 UnitTriangle
 UnitSquare
 UnitHexagon
+SymmetricUnitTriangle
+SymmetricUnitSquare
+SymmetricUnitHexagon
 PolyhedronParticleSpecies
 polyhedron
 UnitTetrahedron
@@ -119,6 +126,11 @@ UnitCube
 UnitOctahedron
 UnitDodecahedron
 UnitIcosahedron
+SymmetricUnitTetrahedron
+SymmetricUnitCube
+SymmetricUnitOctahedron
+SymmetricUnitDodecahedron
+SymmetricUnitIcosahedron
 UnitPyramid
 UnitPrism
 UnitAntiprism
@@ -127,10 +139,24 @@ PatchyDisk
 PatchySphere
 ```
 
+### Meta-species
+
+A [`Polyform`](@ref) wrapped as a species, so that assemblies can be built out of assemblies.
+
+```@docs
+MetaParticleSpecies
+BindingRules(::MetaParticleSpecies)
+BindingRules(::AbstractVector{<:MetaParticleSpecies})
+polyform
+inducedrules
+recast
+```
+
 ## Binding rules
 
 ```@docs
 BindingRules
+SpeciesSiteLoc
 interactionmatrix
 nspecies
 nbonds
@@ -145,12 +171,18 @@ isinert
 ## Polyforms
 
 ```@docs
+AbstractPolyform
 Polyform
+ParticleSiteLoc
 nparticles
 bindingrules
 composition
 canonbindingsite
 canonbindingsites
+exposedsites
+opensites
+exposedsitelocs
+opensitelocs
 rotationgroup(::Polyform)
 permutationgroup(::Polyform)
 bonds
@@ -170,6 +202,29 @@ PolyformCount
 
 An enumeration reports why it stopped as an `RSStatus`: `Finished`, `MaxDepthReached`, `MaxVerticesReached` or `BreakTriggered`.
 A callback returns `ACCEPT`, `REJECT` or `BREAK`; see [Applying constraints](workflow.md#Applying-constraints).
+
+## Tilings and unbounded growth
+
+Whether a rule set admits arbitrarily large structures, and the repeat unit when it does.
+See [Bounded and unbounded rules](growth.md).
+
+```@docs
+isunbounded
+growthwitness
+chainstatebound
+canchain
+tilings
+tilingenum
+Tiling
+unitcell
+latticevectors
+bondtypes
+iscomplete
+tilingorder
+isunitcell
+tilelatticevectors
+cantile
+```
 
 ## Visualization
 

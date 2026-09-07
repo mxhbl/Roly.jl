@@ -92,7 +92,7 @@ function _resolve_colors(
         speciesindex = isnothing(rules) ? 1 : something(findfirst(==(spcs), species(rules)), 1)
     end
     pal = species_palette(speciesindex, n)
-    bonding = isnothing(rules) ? trues(n) : [!isinert(rules, (speciesindex, i)) for i in 1:n]
+    bonding = isnothing(rules) ? trues(n) : [!isinert(rules, SpeciesSiteLoc(speciesindex, i)) for i in 1:n]
 
     inert(i) = isnothing(inert_color) ? _tint(pal[i], inert_tint) : RGBf(inert_color)
     colors = if isnothing(sitecolor)

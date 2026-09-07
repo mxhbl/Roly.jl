@@ -181,8 +181,9 @@ Faces that are related by a rotation of the body must pick compatible orderings.
 For example, a rectangle has degree 4 but only 2-fold symmetry, so corners fall into two classes a 90deg turn apart.
 Picking as a reference edge both long edges on some faces and a short edges on others hides the symmetry that relates them.
 
-The choice of twist reference is made from the geometry of the face: rotate to the lexicographically
+The choice of twist reference is made from the geometry of the faces: rotate to the lexicographically
 least cyclic word of `(edge length, interior angle)`, which ensures compatible references throughout.
+We also impose that opposing faces should have aligned orientations.
 """
 function _canonical_faces(corners::Vector{SVector{3,F}}, faces::Vector{Vector{Int}}) where {F}
     atol = sqrt(eps(F)) * maximum(norm, corners)
@@ -206,7 +207,88 @@ function _canonical_faces(corners::Vector{SVector{3,F}}, faces::Vector{Vector{In
             isbefore(s, best) && (best = s)
         end
         circshift(f, 1 - best)
+    end |> fs -> _mateopposing(corners, fs)
+end
+
+"""
+    _mateopposing(corners, faces)
+
+Return `faces` with the corner list of each face that has an opposite turned so that the two meet
+squarely rather than askew.
+
+The second half of the convention [`_canonical_faces`](@ref) sets. The first half picks each
+face's starting corner from that face alone, which leaves two faces that face each other starting
+wherever their own geometry says, and a bond between them turning the neighbour by whatever their
+two references happen to differ by.
+
+This is a choice among bonds that are all already sound, not a repair. A bond admits only the
+twists the face's own symmetry allows, and those carry the polygon onto itself, so two bonded
+faces line up whichever one it takes. What the starting corner settles is *which* of them the
+bond is, and that decides whether the neighbour ends up a translate.
+
+Call the face's own symmetry angle, `2π/sitesym`, one step -- and note that turning the corner
+list is the only way to move, so only whole numbers of steps are available. That is also what
+makes this free: a whole step carries a frame onto an equivalent one, so it marks nothing and
+costs the body no symmetry.
+
+What decides the case is how the two faces sit in the body, not how symmetric they are:
+
+  - they are turned alike, so the turn that makes bonded copies *translates* of each other is a
+    whole number of steps: take it, and rules over those faces can tile by translation. Every
+    prism, whatever its parity, and the cube
+  - they are staggered by half a step, so that turn is a half-integer number of them. Half a turn
+    is then itself half-integer when the symmetry is odd (`sitesym/2`), so adding it lands on a
+    whole number: take that, and copies meet turned by 180 degrees. Octahedra, dodecahedra,
+    icosahedra, odd antiprisms
+  - staggered, with even symmetry, so neither is whole: leave the face alone. Nothing is given up
+    by doing so -- the stagger is in the body itself, so no rotation about the bond makes two of
+    them translates, and the bond they already have is the one their geometry asks for. Only the
+    caps of an even antiprism
+
+A face with no symmetry at all has no whole step but zero, so it is never turned, and opposing
+faces are under no obligation to be congruent.
+"""
+function _mateopposing(cs::Vector{SVector{3,F}}, faces::Vector{Vector{Int}}) where {F}
+    tol = sqrt(eps(F)) * maximum(norm, cs)
+    centroid(f) = sum(cs[v] for v in f) / length(f)
+    function frame(f)
+        x = centroid(f)
+        ex = normalize(cross(cs[f[2]] - cs[f[1]], cs[f[3]] - cs[f[2]]))
+        ez = normalize((cs[f[1]] + cs[f[2]]) / 2 - x)
+        return RotMatrix3{F}(hcat(ex, cross(ez, ex), ez))
     end
+    function symmetry(f)
+        k = length(f)
+        c = centroid(f)
+        rel = [cs[v] - c for v in f]
+        nrm = frame(f)[:, 1]
+        return count(0:(k - 1)) do s
+            R = AngleAxis(2F(π) * s / k, nrm[1], nrm[2], nrm[3])
+            all(j -> isapprox(R * rel[j], rel[mod1(j + s, k)]; atol=tol), 1:k)
+        end
+    end
+
+    out = [copy(f) for f in faces]
+    for i in eachindex(faces)
+        j = findfirst(m -> isapprox(dot(frame(faces[i])[:, 1], frame(faces[m])[:, 1]), -1; atol=tol),
+                      eachindex(faces))
+        (isnothing(j) || j <= i) && continue
+        f = faces[j]
+        # the frame a partner of face `i` must wear, against the one face `j` wears already
+        turn = transpose(frame(f)) * (frame(faces[i]) * standard_rotation(F, Val(3)))
+        mate = atan(turn[3, 2], turn[2, 2])
+
+        # a whole step of the face's own symmetry, counted in corners
+        perstep = length(f) ÷ symmetry(f)
+        function wholesteps(θ)
+            steps = θ * length(f) / (2F(π))
+            m = round(Int, steps)
+            return abs(steps - m) < sqrt(eps(F)) && iszero(mod(m, perstep)) ? m : nothing
+        end
+        m = something(wholesteps(mate), wholesteps(mate + F(π)), 0)
+        out[j] = circshift(f, -m)
+    end
+    return out
 end
 
 """
@@ -668,6 +750,20 @@ A face's first corner is its site's twist reference, and settling it takes three
 [`siteorbits`](@ref) groups by, alongside the color, so that giving two faces of one orbit
 different twists splits the orbit.
 """
+# What a twist marks a face with, for the labels to tell faces apart by.
+#
+# A turn by the site's own symmetry angle carries its frame onto an equivalent one, so it marks
+# nothing and has to reduce away: without this a face turned by a whole `2π` -- the identity --
+# would read as distinct from its neighbours and cost the body symmetry it has. What survives the
+# reduction is the part the face's own symmetry cannot absorb, which does mark it.
+function _twistmarks(twists, sitesyms, ::Type{F}) where {F}
+    return map(zip(twists, sitesyms)) do (t, sitesym)
+        step = 2F(π) / sitesym
+        r = mod(F(t), step)
+        return min(r, abs(r - step)) < sqrt(eps(F)) ? zero(F) : r
+    end
+end
+
 function _facesites(
     p::Polyhedron{F},
     poseof,
@@ -680,7 +776,7 @@ function _facesites(
 ) where {F}
     n = nfaces(p)
     sitesyms = facesym(p)
-    labels = siteorbits(poseof(faces(p)), sitesyms, collect(zip(colors, twists)))
+    labels = siteorbits(poseof(faces(p)), sitesyms, collect(zip(colors, _twistmarks(twists, sitesyms, F))))
 
     fs = _propagate_faces(corners(p), faces(p), labels)
     # A twist is an angle about the site's own normal. Whole dart steps are taken by rotating
@@ -870,7 +966,8 @@ The counterpart of [`rotationgroup`](@ref), which returns the same group as rota
 """
 function permutationgroup(ps::ParticleSpecies)
     perms = Vector{Int}[]
-    _eachsitesymmetry((_, perm) -> push!(perms, perm), _sitegeometry(ps)...)
+    _eachsitesymmetry((_, perm) -> push!(perms, perm), _sitegeometry(ps)...;
+                      group=_rotationcandidates(ps))
     return perms
 end
 
@@ -886,9 +983,21 @@ permutations.
 """
 function rotationgroup(ps::ParticleSpecies)
     rots = _rotationtype(posetype(ps))[]
-    _eachsitesymmetry((Q, _) -> push!(rots, Q), _sitegeometry(ps)...)
+    _eachsitesymmetry((Q, _) -> push!(rots, Q), _sitegeometry(ps)...; group=_rotationcandidates(ps))
     return rots
 end
+
+"""
+    _rotationcandidates(ps::ParticleSpecies)
+
+The rotations to test when asking for `ps`'s symmetry group, or `nothing` to derive them from its
+sites; the `group` argument of [`_eachsitesymmetry`](@ref).
+
+Only ever a *superset* of the answer, since every consumer drops the ones that move a site. A
+species whose sites do not determine it overrides this, see the warning on
+[`_eachsitesymmetry`](@ref).
+"""
+_rotationcandidates(::ParticleSpecies) = nothing
 
 _rotationtype(::Type{<:Pose{D,F,R}}) where {D,F,R} = R
 
@@ -902,7 +1011,7 @@ function _sitegeometry(ps::ParticleSpecies)
 end
 
 """
-    _eachsitesymmetry(f, poses, sitesyms, sitelabels)
+    _eachsitesymmetry(f, poses, sitesyms, sitelabels; group=nothing)
 
 Call `f(Q, perm)` on every rotation `Q` about the particle (= site poses, syms, and labels) origin that carries each site onto
 one with the same `sitelabels` entry, matching position and orientation, together with the site
@@ -911,17 +1020,24 @@ permutation `perm` it induces. Return how many there were.
 `sitelabels` is whatever a symmetry has to preserve: graph labels when asking what the graph
 claims, colors when asking what the arrangement is. Pass `f = Returns(nothing)` to only count.
 
-The candidates are enumerated by orbit and stabilizer: a rotation is fixed by where it sends
-site 1's frame, it must send site 1 to a site of the same label, and it may leave the frame in
-any of that site's `sitesym` equivalent turns. Every group element appears exactly once, since
-the outer loop runs over site 1's orbit and the inner one over its stabilizer.
+`group` is where the candidate rotations come from. Given one, each of its elements is tried once
+and those moving a site off the set are dropped, which is how a caller holding the particle's
+symmetry group by other means reaches the same permutations.
 
-!!! warning "Particles only"
-    This rests on a particle's sites having *distinct positions*, which makes a rotation
-    determined by where it sends site 1, and makes the site map injective for free. Neither
-    holds for an assembled [`Polyform`](@ref).
+Given `nothing`, the candidates are derived from the sites, by orbit and stabilizer: a rotation
+is fixed by where it sends site 1's frame, it must send site 1 to a site of the same label, and
+it may leave the frame in any of that site's `sitesym` equivalent turns. Every group element
+appears exactly once, since the outer loop runs over site 1's orbit and the inner one over its
+stabilizer.
+
+!!! warning "When the group has to be supplied"
+    Deriving it rests on two things. The sites must have *distinct positions*, which makes a
+    rotation determined by where it sends site 1 and the site map injective for free. And the
+    sites must determine the body, which an assembled [`Polyform`](@ref) does not: two open sites
+    can sit in symmetric poses with different structures behind them. A
+    [`MetaParticleSpecies`](@ref) fails both and supplies its `Polyform`'s own group instead.
 """
-function _eachsitesymmetry(f, poses, sitesyms, sitelabels)
+function _eachsitesymmetry(f, poses, sitesyms, sitelabels; group=nothing)
     n = length(poses)
     tol = sqrt(eps(eltype(typeof(first(poses)))))
     atol = tol * maximum(norm(p.x) for p in poses)
@@ -941,6 +1057,16 @@ function _eachsitesymmetry(f, poses, sitesyms, sitelabels)
     end
 
     count = 0
+    if group !== nothing
+        for Q in group
+            perm = permutation(Q)
+            isnothing(perm) && continue
+            f(Q, perm)
+            count += 1
+        end
+        return count
+    end
+
     for a in 1:n
         sitelabels[a] == sitelabels[1] || continue
         for psi in _sitetwists(poses[a].psi, sitesyms[a])
@@ -959,14 +1085,14 @@ function _eachsitesymmetry(f, poses, sitesyms, sitelabels)
 end
 
 """
-    _sitesymmetries(poses, sitesyms, sitelabels)
+    _sitesymmetries(poses, sitesyms, sitelabels; group=nothing)
 
 Return the site permutations of [`_eachsitesymmetry`](@ref), for callers that hold the site
 geometry rather than a [`ParticleSpecies`](@ref).
 """
-function _sitesymmetries(poses, sitesyms, sitelabels)
+function _sitesymmetries(poses, sitesyms, sitelabels; group=nothing)
     perms = Vector{Int}[]
-    _eachsitesymmetry((_, perm) -> push!(perms, perm), poses, sitesyms, sitelabels)
+    _eachsitesymmetry((_, perm) -> push!(perms, perm), poses, sitesyms, sitelabels; group)
     return perms
 end
 
@@ -1006,15 +1132,16 @@ function _graphsiteorbits(ps::ParticleSpecies, vertexorbits)
 end
 
 """
-    siteorbits(poses, sitesyms, colors)
+    siteorbits(poses, sitesyms, colors; group=nothing)
 
 Group the sites into the orbits of the rotations that preserve the colored arrangement, and
 return one orbit index per site.
 """
-function siteorbits(poses, sitesyms, colors)
+function siteorbits(poses, sitesyms, colors; group=nothing)
     n = length(poses)
     orbit = collect(1:n)
-    for perm in _sitesymmetries(poses, sitesyms, colors)
+    # we need sitesyms to quotient out the site symmetry groups
+    for perm in _sitesymmetries(poses, sitesyms, colors; group)
         for i in 1:n
             lo, hi = minmax(orbit[i], orbit[perm[i]])
             hi == lo && continue
@@ -1038,13 +1165,13 @@ symmetries leave the site where it is.
 stabilizerorders(ps::ParticleSpecies) = [bindingsite(ps, i).stab for i in 1:nsites(ps)]
 
 """
-    stabilizerorders(poses, sitesyms, sitelabels)
+    stabilizerorders(poses, sitesyms, sitelabels; group=nothing)
 
 Return the order of each site's stabilizer: how many of the particle's own
 symmetries leave the site where it is.
 """
-function stabilizerorders(poses, sitesyms, sitelabels)
-    perms = _sitesymmetries(poses, sitesyms, sitelabels)
+function stabilizerorders(poses, sitesyms, sitelabels; group=nothing)
+    perms = _sitesymmetries(poses, sitesyms, sitelabels; group)
     return [count(perm -> perm[i] == i, perms) for i in eachindex(poses)]
 end
 
@@ -1118,7 +1245,7 @@ function _check_labeling(ps::ParticleSpecies)
     end
 
     labeling = _canonicalpartition([sitelabel(ps, i) for i in 1:nsites(ps)])
-    orbits = siteorbits(_sitegeometry(ps)...)
+    orbits = siteorbits(_sitegeometry(ps)...; group=_rotationcandidates(ps))
     labeling == orbits || throw(
         ArgumentError(
             "This labeling groups the sites as $labeling, but the rotations preserving it group " *
@@ -1153,7 +1280,8 @@ labels by hand instead of deriving them with [`siteorbits`](@ref).
 """
 function check_encoding(ps::ParticleSpecies)
     _check_labeling(ps)
-    geometric = _eachsitesymmetry(Returns(nothing), _sitegeometry(ps)...)
+    geom, group = _sitegeometry(ps), _rotationcandidates(ps)
+    geometric = _eachsitesymmetry(Returns(nothing), geom...; group)
     # Not `canonize`: a species' graph must stay in construction order, see `symmetrynumber`.
     _, autg = nauty(graphrep(ps))
     graph = convert(Int, autg.n)
@@ -1172,7 +1300,7 @@ function check_encoding(ps::ParticleSpecies)
         ),
     )
 
-    orbits = siteorbits(_sitegeometry(ps)...)
+    orbits = siteorbits(geom...; group)
     fromgraph = _graphsiteorbits(ps, autg.orbits)
     orbits == fromgraph || throw(
         ArgumentError(

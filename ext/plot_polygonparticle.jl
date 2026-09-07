@@ -1,13 +1,16 @@
 function plot_particlespecies!(ax, spcs::PolygonParticleSpecies{F}, pose::Pose=Pose{2,F}();
                                sitecolor=nothing, speciesindex=nothing, rules=nothing,
-                               cornerradius=nothing, strokewidth=3, kwargs...) where {F}
+                               cornerradius=nothing, strokewidth=3, alpha=1,
+                               strokecolor=(:black, alpha), kwargs...) where {F}
     n = nsites(spcs)
     a = 2spcs.rmin * tan(π / n)
     isnothing(cornerradius) && (cornerradius = 0.2a)
 
     _, _, colors, _ = _resolve_colors(spcs, speciesindex, rules, sitecolor)
+    # `alpha` fades the fill but leaves a scatter's outline alone, so the outline is faded by
+    # its own color -- otherwise a ghosted particle keeps a full-strength black edge
     return _draw_ngon!(ax, pose.x[1], pose.x[2], rotation_angle(pose.psi);
-                       n, a, cornerradius, color=colors, strokewidth, kwargs...)
+                       n, a, cornerradius, color=colors, strokewidth, strokecolor, alpha, kwargs...)
 end
 
 function _ngon_segment(n::Integer, a::Real, cornerradius::Real)

@@ -16,6 +16,7 @@ using LinearAlgebra: inv
 using Graphs, NautyGraphs, LinearAlgebra, StaticArrays, Rotations, Random
 
 @testset "PolyhedronParticleSpecies" begin
+    nedges(p) = length(collect(Roly.exterior_edges(p)))
     solids = [
         ("UnitTetrahedron", UnitTetrahedron, Tetrahedron(), 4, 12),
         ("UnitCube", UnitCube, Cube(), 6, 24),
@@ -52,10 +53,12 @@ using Graphs, NautyGraphs, LinearAlgebra, StaticArrays, Rotations, Random
     end
 
     # The package convention: outward normal on local x. Additionally fix local z
-    # at the midpoint of the face's first edge
-    for (name, ps, shp, nf, _) in solids
+    # at the midpoint of the face's first edge. Asked of the constructor rather than of the
+    # `Unit*` constants, which turn some of their faces off it -- see `matingtwists`
+    for (name, _, shp, nf, _) in solids
+        plain = PolyhedronParticleSpecies(shp)
         for i in 1:nf
-            psi = bindingsite(ps, i).pose.psi
+            psi = bindingsite(plain, i).pose.psi
             @test isapprox(psi[:, 1], Roly.facenormal(shp, i); atol=1e-10)
             v = edgemidpoint(shp, i, 1) - facecentroid(shp, i)
             @test isapprox(psi[:, 3], normalize(v); atol=1e-10)
@@ -395,8 +398,10 @@ using Graphs, NautyGraphs, LinearAlgebra, StaticArrays, Rotations, Random
         # removal would leave a block hanging off the end.
         blocks = sort(reduce(vcat, [collect(Roly.graphvertices(pt, rules)) for pt in p.particles]))
         @test blocks == 1:nv(graphrep(p))
-        # Each bond joins the vertices of one pair of faces.
-        @test nbonds(p) == 4 * (nparticles(p) - 1) ÷ 1 || nbonds(p) >= nparticles(p) - 1
+        # A connected polyform has at least n-1 bonds, and this cube is cycle-encoded, so each
+        # bond reaches the graph as exactly one edge.
+        @test nbonds(p) >= nparticles(p) - 1
+        @test nedges(p) == nbonds(p)
     end
 
     # Raising then lowering returns the original structure.
@@ -421,9 +426,11 @@ using Graphs, NautyGraphs, LinearAlgebra, StaticArrays, Rotations, Random
     @test mixed isa BindingRules
     same = BindingRules([1 squares[1] 1 squares[2]], prism)
     @test same isa BindingRules
-    # Four dart pairs for a square-to-square bond, one reference pair for the mixed one.
-    @test nbonds(polygen(same; maxsize=2)[end]) == 4
-    @test nbonds(polygen(mixed; maxsize=2)[end]) == 1
+    # Four dart pairs for a square-to-square bond, one reference pair for the mixed one, and
+    # one bond either way.
+    @test nedges(polygen(same; maxsize=2)[end]) == 4
+    @test nedges(polygen(mixed; maxsize=2)[end]) == 1
+    @test nbonds(polygen(same; maxsize=2)[end]) == nbonds(polygen(mixed; maxsize=2)[end]) == 1
 
     # twists
 
@@ -443,11 +450,22 @@ using Graphs, NautyGraphs, LinearAlgebra, StaticArrays, Rotations, Random
         @test counts(BindingRules([1 first(sides) 1 first(sides)], ps)) == [1, 2, 3, 6, 10]
     end
 
-    # Turning one face of an orbit differently is a deliberate break, and the labeling has to
-    # record it or the graph would keep claiming a symmetry the frames no longer have. The twist
-    # is folded into the key `siteorbits` groups by, so the orbit splits.
+    # A side of this prism is square, so a quarter turn carries its frame onto an equivalent one
+    # and marks nothing, however alone it stands. A whole 2pi turn least of all: it is the
+    # identity, and reading it as a mark would cost the body symmetry it plainly has.
+    for t in (π/2, π, 3π/2, 2π)
+        whole = PolyhedronParticleSpecies(shp; colors,
+                                          twists=[i == first(sides) ? t : 0.0 for i in 1:nfaces(shp)])
+        @test symmetrynumber(whole) == 6
+        @test length(unique(Roly.labels(graphrep(whole)))) == 2
+    end
+
+    # What the face's own symmetry cannot absorb does mark it, and then turning one face of an
+    # orbit differently is a deliberate break that the labeling has to record, or the graph would
+    # keep claiming a symmetry the frames no longer have. The twist is folded into the key
+    # `siteorbits` groups by, so the orbit splits.
     split = PolyhedronParticleSpecies(shp; colors,
-                                      twists=[i == first(sides) ? π/2 : 0.0 for i in 1:nfaces(shp)])
+                                      twists=[i == first(sides) ? π/4 : 0.0 for i in 1:nfaces(shp)])
     @test symmetrynumber(split) == length(permutationgroup(split)) == 2
     @test length(unique(Roly.labels(graphrep(split)))) == 3
     @test symmetrynumber(PolyhedronParticleSpecies(shp; colors)) == 6
@@ -492,4 +510,43 @@ using Graphs, NautyGraphs, LinearAlgebra, StaticArrays, Rotations, Random
 
     @test_throws ArgumentError PolyhedronParticleSpecies(Cube(); twists=[0.0, 1.0])
     @test_throws ArgumentError PolyhedronParticleSpecies(Cube(); locking=[true, false])
+
+    # bodies that are not regular: opposing faces need not be congruent, and a face need not be
+    # symmetric at all. Nothing about squaring opposing faces up assumes otherwise -- a face whose
+    # only symmetry is the identity has no whole step but zero, so it is never turned
+    box = Roly.Polyhedron(SVector{3,Float64}[(x, 2y, 3z) for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)])
+    frustum = Roly.Polyhedron(SVector{3,Float64}[(-1, -1, -1), (1, -1, -1), (1, 1, -1), (-1, 1, -1),
+                                                 (-0.4, -0.4, 1), (0.4, -0.4, 1), (0.4, 0.4, 1),
+                                                 (-0.4, 0.4, 1)])
+    # a box of three different side lengths: every face a rectangle, twofold rather than fourfold
+    @test [Roly.facesym(box, i) for i in 1:nfaces(box)] == fill(2, 6)
+    @test symmetrynumber(PolyhedronParticleSpecies(box; colors=fill(1, 6))) == 4
+    # a frustum: its two square caps oppose each other but are not the same size, and its sides
+    # are trapezoids with no symmetry at all
+    @test sort(unique(Roly.facesym(frustum, i) for i in 1:nfaces(frustum))) == [1, 4]
+    @test symmetrynumber(PolyhedronParticleSpecies(frustum; colors=fill(1, 6))) == 4
+    @test PolyhedronParticleSpecies(frustum) isa PolyhedronParticleSpecies
+
+    # the symmetric counterparts differ from the defaults in coloring alone: one color throughout,
+    # so the body keeps its rotation group where a color per face leaves it none
+    for (plain, sym, sigma) in ((UnitTetrahedron, SymmetricUnitTetrahedron, 12),
+                                (UnitCube, SymmetricUnitCube, 24),
+                                (UnitOctahedron, SymmetricUnitOctahedron, 24),
+                                (UnitDodecahedron, SymmetricUnitDodecahedron, 60),
+                                (UnitIcosahedron, SymmetricUnitIcosahedron, 60))
+        n = nsites(plain)
+        @test nsites(sym) == n
+        @test [color(bindingsite(plain, i)) for i in 1:n] == 1:n
+        @test [color(bindingsite(sym, i)) for i in 1:n] == fill(1, n)
+        # the sites sit in the same places; only their twist references and colors differ
+        @test [bindingsite(plain, i).pose.x for i in 1:n] == [bindingsite(sym, i).pose.x for i in 1:n]
+        @test symmetrynumber(plain) == 1
+        @test symmetrynumber(sym) == sigma
+    end
+
+    # `UnitCube` carries the twists that make opposite faces mate square-on, so a rule set bonding
+    # them tiles space. `SymmetricUnitCube` gets there the other way: one color leaves every face
+    # a fourfold stabilizer, so a bond admits all four twists and the translation is among them
+    @test isunitcell(first(polygen(BindingRules([1 1 1 6; 1 2 1 5; 1 3 1 4], UnitCube); maxsize=1)))
+    @test isunitcell(first(polygen(BindingRules([1 1 1 1], SymmetricUnitCube); maxsize=1)))
 end

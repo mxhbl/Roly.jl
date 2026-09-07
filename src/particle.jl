@@ -26,8 +26,8 @@ end
 
 Base.:*(p, part::Particle) = typeof(part)(p * part.pose, part.leadingvertex, part.speciesindex)
 Base.:*(part::Particle, p) = typeof(part)(part.pose * p, part.leadingvertex, part.speciesindex)
-Base.:+(p, part::Particle) = typeof(part)(p + part.pose, part.leadingvertex, part.speciesindex)
-Base.:+(part::Particle, p) = typeof(part)(part.pose + p, part.leadingvertex, part.speciesindex)
+translate(part::Particle, v) =
+    typeof(part)(translate(part.pose, v), part.leadingvertex, part.speciesindex)
 
 @inline graphvertices(p::Particle, rules::BindingRules) =
     (1:nv(graphrep(species(rules, p.speciesindex)))) .+ (p.leadingvertex - 1)

@@ -1,10 +1,28 @@
 using Roly: Polyform, nparticles, nsites, bindingrules, symmetrynumber, dimension,
             bonds, bondindex, composition, interior_edges, exterior_edges, tocanon, toorig,
             BindingRules, UnitSquare, nbonds, raise!, lower!, bindingsites, graphrep,
-            collect_open_bindingsites, collect_attachments, particle_from_leadingvertex,
+            opensitelocs, collect_attachments, particle_from_leadingvertex,
             PolygonParticleSpecies, species, polygen
 
 @testset "polyform" begin
+    # A bond joins two sites, and `contact_pairing` pairs gcd(k1, k2) of their vertices, so a
+    # dart-encoded bond reaches the graph as several edges. Counting edges would report one
+    # cube-to-cube bond four times, and `composition` would say the same.
+    let cubes = BindingRules([1 1 1 1], PolyhedronParticleSpecies(Cube(); colors=fill(1, 6)))
+        dimer = first(p for p in polygen(cubes; maxsize=2) if nparticles(p) == 2)
+        @test length(collect(Roly.exterior_edges(dimer))) == 4
+        @test nbonds(dimer) == 1
+        @test length(collect(bonds(dimer))) == 1
+        @test composition(dimer) == [2, 1]
+        # every bond is listed once, and joins two sites nothing else uses
+        for p in polygen(cubes; maxsize=4)
+            bs = collect(bonds(p))
+            @test length(bs) == nbonds(p)
+            @test allunique(bs)
+            @test allunique(reduce(vcat, [[b.first, b.second] for b in bs]; init=[]))
+        end
+    end
+
     rules = BindingRules([1 1 1 3; 1 2 1 4], UnitSquare)
 
     empty_poly = Polyform(rules)
@@ -40,7 +58,7 @@ using Roly: Polyform, nparticles, nsites, bindingrules, symmetrynumber, dimensio
 
     @test length(collect(bindingsites(mono))) == nsites(mono)
 
-    open_sites = collect_open_bindingsites(mono)
+    open_sites = opensitelocs(mono)
     @test length(open_sites) == 4
 
     for v in eachindex(mono.canon2orig)
@@ -48,8 +66,8 @@ using Roly: Polyform, nparticles, nsites, bindingrules, symmetrynumber, dimensio
     end
 
     di = copy(mono)
-    site, siteloc = first(collect_attachments(di))
-    @test !isnothing(raise!(di, site, siteloc))
+    site, loc = first(collect_attachments(di))
+    @test !isnothing(raise!(di, site, loc))
     @test nparticles(di) == 2
     @test nsites(di) == 8
 
@@ -80,11 +98,11 @@ using Roly: Polyform, nparticles, nsites, bindingrules, symmetrynumber, dimensio
     lower!(poly_raise)
 
     attachments = collect_attachments(poly_raise)
-    site, siteloc = first(attachments)
+    site, loc = first(attachments)
     i = 1
     while ismissing(raise!(poly_raise, attachments[i]...))
         i += 1
-        site_siteloc = attachments[i]
+        siteandloc = attachments[i]
     end
 
     @test poly == poly_raise

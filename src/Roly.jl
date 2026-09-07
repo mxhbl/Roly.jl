@@ -6,7 +6,8 @@ using Graphs, NautyGraphs
 using ReverseSearch
 
 # Geometry primitives
-export Pose, dimension, numtype, posetype
+export Pose, dimension, translate, translate!
+public numtype, posetype, sitetype, particletype
 export Rotation, Angle2d, RotXYZ, RotMatrix3, rotation_angle, rotation_axis, SVector
 
 # Binding sites
@@ -18,17 +19,31 @@ export Tetrahedron, Cube, Octahedron, Dodecahedron, Icosahedron, Pyramid, Prism,
 export RotationGroup, Cyclic, Dihedral, Tetrahedral, Octahedral, Icosahedral, grouporder
 
 # Particle species
-export ParticleSpecies, SpeciesAndPose
+export ParticleSpecies
+public SpeciesAndPose
 export nsites, bindingsite, bindingsites, graphrep, symmetrynumber
 
 # Assembly system
-export BindingRules, interactionmatrix
-export ncolors, nspecies, nbonds, bonded_colors, bonded_sites, bonded_species, isinert, species
+export BindingRules, SpeciesSiteLoc, interactionmatrix
+export ncolors, nspecies, nbonds, isinert, species
+public bonded_colors, bonded_sites, bonded_species, sitesofcolor, speciesofcolor
 
 # Polyforms
-export Polyform, nparticles, bindingrules, composition
-export bonds, bondindex, interior_edges, exterior_edges
-public canonbindingsite, canonbindingsites
+export AbstractPolyform, Polyform, ParticleSiteLoc, nparticles, bindingrules, composition, bonds
+export exposedsites, opensites, exposedsitelocs, opensitelocs
+
+# The graph a polyform carries, and the vertices it is written in, are an implementation detail:
+# every one of these takes or yields bare graph vertices, whose numbering (canonical or original)
+# a caller has to get right. Nothing exported does, so that hazard stops at the boundary.
+public bondindex, interior_edges, exterior_edges, subpolyform
+public canonbindingsite, canonbindingsites, rotationcenter
+
+# Environments
+export PolyformEnvironment, ParticleEnvironment, BondEnvironment
+export particleenvironments, bondenvironments, crop, rootenvironment
+export Tiling, tilings, tilingenum, isunitcell, tilelatticevectors, cantile, canchain, isunbounded,
+       chainstatebound, growthwitness
+export unitcell, latticevectors, bondtypes, iscomplete, tilingorder
 
 # Enumeration
 export ACCEPT, REJECT, BREAK
@@ -37,10 +52,14 @@ export polyenum, polygen, countpolyforms, PolyformCount
 
 # Species
 export PolygonParticleSpecies, UnitNgon, UnitTriangle, UnitSquare, UnitHexagon
+export SymmetricUnitTriangle, SymmetricUnitSquare, SymmetricUnitHexagon
 export PolyhedronParticleSpecies
 export UnitTetrahedron, UnitCube, UnitOctahedron, UnitDodecahedron, UnitIcosahedron
+export SymmetricUnitTetrahedron, SymmetricUnitCube, SymmetricUnitOctahedron
+export SymmetricUnitDodecahedron, SymmetricUnitIcosahedron
 export UnitPyramid, UnitPrism, UnitAntiprism
 export PatchyParticleSpecies, PatchyDisk, PatchySphere
+export MetaParticleSpecies, polyform, inducedrules, recast
 
 # Public, but not exported: reach for these as `Roly.faces(p)`, or import them by name.
 # They are stable API, but specific enough to a body, an encoding or a species that putting
@@ -57,7 +76,7 @@ public rotationgroup, faceorbits, facesym, siteorbits, stabilizerorders, sitelab
 public permutationgroup, check_encoding
 
 # What a bond fixes about relative orientation
-public contact_pairing, standard_twist, twistfreedom, twist
+public contact_pairing, standard_twist, twistfreedom, twist, Contact
 
 # The `ParticleSpecies` interface, implemented rather than called
 public isconvex, bounding_radius, could_contact, overlap
@@ -73,10 +92,13 @@ include("bindingrules.jl")
 include("particle.jl")
 include("polyform.jl")
 include("enumeration.jl")
+include("environments.jl")
 
 include("species/polygonparticlespecies.jl")
 include("species/polyhedronparticlespecies.jl")
 include("species/patchyparticlespecies.jl")
+include("species/metaparticlespecies.jl")
+include("tiling.jl")
 
 include("ruleeditor.jl")
 using .RuleEditor: ruleeditor
