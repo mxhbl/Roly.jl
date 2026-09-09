@@ -1,149 +1,904 @@
-using Roly.RuleEditor: EditorState, SquareLat, TriangleLat, HexLat, Key,
-                      inferred_bonds, bonds_matrix, _handle_key!, _visible_species_count,
-                      _ensure_species!
+const RE = Base.get_extension(Roly, :TachikomaExt)
 
-# Convenience: build a fresh EditorState with just the fields tests care about.
-function _mkstate(lat, sp; cells=Dict{Tuple{Int,Int},Tuple{Int,Int}}(),
-                  cursor=(1, 1), active_species=1, active_rot=0,
-                  grid_rows=8, grid_cols=8, species=[copy(sp)])
-    return EditorState(lat, sp, species, cells, cursor, active_species, active_rot,
-                       grid_rows, grid_cols, :basic, "",
-                       Dict{Tuple{Int,Int},Tuple{Int,Int}}(), (0, 0), 0, -1, 0, (0, 0), true)
+# Attach a particle to the free site `(placement, site)` using site `incoming` of the active
+# species, the way pressing enter in the editor does.
+function _attach!(m, placement, site, incoming)
+    i = findfirst(==((placement, site)), m.free)
+    isnothing(i) && error("site ($placement, $site) is not free")
+    m.focus = :construction  # enter means attach only in the construction pane
+    m.anchor = i
+    m.incoming = incoming
+    RE.update!(m, Tachikoma.KeyEvent(:enter))
+    return m
+end
+
+# Run the enumeration, which the editor does only when asked.
+_enumerate!(m) = RE.update!(m, Tachikoma.KeyEvent('e'))
+
+function _frame(tb)
+    area = Tachikoma.Rect(1, 1, tb.width, tb.height)
+    return Tachikoma.Frame(tb.buf, area, Tachikoma.GraphicsRegion[], [])
+end
+
+function _render(m, w=170, h=32)
+    tb = Tachikoma.TestBackend(w, h)
+    RE.view(m, _frame(tb))
+    return tb
+end
+
+# Bearing of each free site about the structure's centroid, which is the order the anchor
+# cycles in.
+function _bearings(m)
+    sites = RE.absolutesites(m.placements, m.species)
+    c = sum(pose.x for (_, pose) in m.placements) / length(m.placements)
+    return [(d=sites[i][k].pose.x - c; atan(d[2], d[1])) for (i, k) in m.free]
+end
+
+# A structure of `n` species, each a copy of `spcs` attached to a different site of the first.
+function _manyspecies(n, spcs=UnitHexagon)
+    m = RE.EditorModel(spcs)
+    m.focus = :construction  # digits pick the active species, which only the build pane has
+    for d in 2:n
+        RE.update!(m, Tachikoma.KeyEvent(Char('0' + d)))
+        _attach!(m, 1, d, 1)
+    end
+    return m
+end
+
+# `n` species, none of them placed, which is what the rules pane alone can produce.
+function _addspecies(n, spcs=UnitHexagon)
+    m = RE.EditorModel(spcs)
+    for _ in 2:n
+        RE.update!(m, Tachikoma.KeyEvent('a'))
+    end
+    return m
 end
 
 @testset "ruleeditor" begin
-   # bond inference
-    s = _mkstate(SquareLat(), UnitSquare;
-                    cells=Dict((1,1) => (1, 0), (1,2) => (1, 0)))
-    @test inferred_bonds(s) == [(2, 4)]
+    @test !isnothing(RE)
 
-    s = _mkstate(SquareLat(), UnitSquare;
-                    cells=Dict((1,1) => (1, 0), (2,1) => (1, 0)))
-    @test inferred_bonds(s) == [(1, 3)]
+    # A fresh model holds one particle, every site of it free, and no rule yet.
+    m = RE.EditorModel(UnitSquare)
+    @test length(m.placements) == 1
+    @test length(m.free) == nsites(UnitSquare)
+    @test nbonds(m.rules) == 0
+    @test RE.ntwists(m) == 1  # a 2D bond fixes the partner's orientation outright
 
-    # Empty grid -> no bonds
-    s = _mkstate(SquareLat(), UnitSquare)
-    @test isempty(inferred_bonds(s))
-    @test size(bonds_matrix(s)) == (0, 4)
+    # An attachment bonds the anchor's color to the incoming site's color, and consumes both.
+    _attach!(m, 1, 2, 4)
+    @test RE.inferred_bonds(m.placements, m.species) == [(2, 4)]
+    @test length(m.free) == 2 * nsites(UnitSquare) - 2
+    @test RE.bonds_matrix(m.placements, m.species) == [1 2 1 4]
+    @test !isnothing(m.rules)
 
-    s = _mkstate(TriangleLat(), UnitTriangle;
-                    cells=Dict((1,1) => (1, 0), (1,2) => (1, 0)))
-    @test inferred_bonds(s) == [(3, 3)]
+    m = RE.EditorModel(UnitSquare)
+    _attach!(m, 1, 1, 3)
+    @test RE.inferred_bonds(m.placements, m.species) == [(1, 3)]
 
-    s = _mkstate(TriangleLat(), UnitTriangle;
-                    cells=Dict((1,1) => (1, 0), (2,1) => (1, 0)))
-    @test inferred_bonds(s) == [(1, 1)]
+    m = RE.EditorModel(UnitTriangle)
+    _attach!(m, 1, 3, 3)
+    @test RE.inferred_bonds(m.placements, m.species) == [(3, 3)]
 
-    s = _mkstate(HexLat(), UnitHexagon; cells=Dict((1,1) => (1, 0), (1,2) => (1, 0)))
-    @test inferred_bonds(s) == [(3, 6)]
+    m = RE.EditorModel(UnitHexagon)
+    _attach!(m, 1, 3, 6)
+    @test RE.inferred_bonds(m.placements, m.species) == [(3, 6)]
 
-    s = _mkstate(HexLat(), UnitHexagon;
-                    cells=Dict((1,1) => (1, 0), (2,1) => (1, 0)))
-    @test inferred_bonds(s) == [(2, 5)]
+    # Rules are read off every pair of particles, not just the pairs that were attached. Here
+    # the fourth square closes a 2x2 block: it bonds (1, 2) to the particle it was attached to,
+    # and incidentally (1, 4) to the one across the block, which no attachment named.
+    m = RE.EditorModel(UnitSquare)
+    _attach!(m, 1, 1, 3)
+    _attach!(m, 1, 2, 4)
+    @test RE.inferred_bonds(m.placements, m.species) == [(1, 3), (2, 4)]
+    _attach!(m, 2, 2, 1)
+    @test RE.inferred_bonds(m.placements, m.species) == [(1, 2), (1, 3), (1, 4), (2, 4)]
+    @test size(RE.bonds_matrix(m.placements, m.species), 1) == 4
 
-    # end-to-end:
-    cells = Dict((1,1) => (1, 0), (2,1) => (1, 0), (2,2) => (1, 0))
-    s = _mkstate(SquareLat(), UnitSquare; cells=cells)
-    bonds = bonds_matrix(s)
-    rules = BindingRules(bonds, UnitSquare)
-    r = polyenum(rules; maxsize=3, maxstrs=100)
-    @test r.nstructures > 0
+    # An empty grid yields nothing to infer.
+    m = RE.EditorModel(UnitSquare)
+    @test isempty(RE.inferred_bonds(m.placements, m.species))
+    @test size(RE.bonds_matrix(m.placements, m.species)) == (0, 4)
+    @test isnothing(RE.buildrules(m.placements, m.species))
 
-     #_visible_species_count"
-    s = _mkstate(SquareLat(), UnitSquare)
-    @test _visible_species_count(s) == 1
+    # A pentagon chain curls back on itself, and the attachment that would overlap is refused.
+    m = RE.EditorModel(UnitNgon(5))
+    _attach!(m, 1, 4, 5)
+    _attach!(m, 2, 4, 5)
+    @test length(m.placements) == 3
+    _attach!(m, 3, 4, 5)
+    @test length(m.placements) == 3
+    @test startswith(m.message, "overlaps")
 
-    s.active_species = 5
-    @test _visible_species_count(s) == 5
+    # `.` walks the perimeter in order and reaches every free site; `,` goes back.
+    m = RE.EditorModel(UnitSquare)
+    m.focus = :construction
+    visited = Int[]
+    for _ in eachindex(m.free)
+        push!(visited, m.anchor)
+        RE.update!(m, Tachikoma.KeyEvent('.'))
+    end
+    @test sort(visited) == collect(eachindex(m.free))
+    @test m.anchor == 1  # a full lap returns to the start
+    RE.update!(m, Tachikoma.KeyEvent(','))
+    @test m.anchor == length(m.free)
 
-    # After switching back with no cells, contracts.
-    s.active_species = 1
-    @test _visible_species_count(s) == 1
+    # The editor opens on the rules, with the construction pane put away.
+    m = RE.EditorModel(UnitSquare)
+    @test m.focus === :rules
+    @test !m.showconstruction
 
-    # If a cell uses species 3, count must include it.
-    s.cells[(1,1)] = (3, 0)
-    @test _visible_species_count(s) == 3
-    s.active_species = 2
-    @test _visible_species_count(s) == 3  # max(active, used_max)
+    # Tab cycles the visible panes; the construction pane joins the cycle when `b` shows it.
+    RE.update!(m, Tachikoma.KeyEvent(:tab))
+    @test m.focus === :enumeration
+    RE.update!(m, Tachikoma.KeyEvent(:tab))
+    @test m.focus === :rules
+    RE.update!(m, Tachikoma.KeyEvent('b'))
+    @test m.showconstruction
+    @test m.focus === :construction  # showing it also moves there, since that is why you pressed it
+    RE.update!(m, Tachikoma.KeyEvent(:tab))
+    @test m.focus === :enumeration
+    RE.update!(m, Tachikoma.KeyEvent(:tab))
+    @test m.focus === :rules
+    RE.update!(m, Tachikoma.KeyEvent('b'))
+    @test !m.showconstruction
 
-    "cursor/keys"
-    s = _mkstate(SquareLat(), UnitSquare; cursor=(3, 3))
-    _handle_key!(s, Key(:arrow, :up));    @test s.cursor == (2, 3)
-    _handle_key!(s, Key(:arrow, :down));  @test s.cursor == (3, 3)
-    _handle_key!(s, Key(:arrow, :left));  @test s.cursor == (3, 2)
-    _handle_key!(s, Key(:arrow, :right)); @test s.cursor == (3, 3)
+    # Arrow keys step one site along the perimeter, so nothing is skipped, and always to one of
+    # the two neighbors, so no key is ever dead. Which neighbor is decided by bearing alone.
+    m = RE.EditorModel(UnitSquare)
+    _attach!(m, 1, 1, 3)
+    _attach!(m, 1, 2, 4)
+    _attach!(m, 2, 2, 1)
+    _sitepos(n) = RE.absolutesites(m.placements, m.species)[m.free[n][1]][m.free[n][2]].pose.x
+    _cos(from, to, d) = (v=_sitepos(to) - _sitepos(from); (v[1] * d[1] + v[2] * d[2]) / hypot(v...))
+    n = length(m.free)
+    for start in 1:n, dir in (:up, :down, :left, :right)
+        m.anchor = start
+        RE.update!(m, Tachikoma.KeyEvent(dir))
+        nxt, prv = mod1(start + 1, n), mod1(start - 1, n)
+        @test m.anchor in (nxt, prv)          # a neighbor, never a jump
+        @test m.anchor != start               # never dead
+        d = getfield(RE.ARROWS, dir)
+        @test _cos(start, m.anchor, d) >= _cos(start, m.anchor == nxt ? prv : nxt, d) - 1e-12
+    end
 
-    # Clamp at boundaries.
-    s.cursor = (1, 1)
-    _handle_key!(s, Key(:arrow, :up));    @test s.cursor == (1, 1)
-    _handle_key!(s, Key(:arrow, :left));  @test s.cursor == (1, 1)
-    s.cursor = (s.grid_rows, s.grid_cols)
-    _handle_key!(s, Key(:arrow, :down));  @test s.cursor == (s.grid_rows, s.grid_cols)
-    _handle_key!(s, Key(:arrow, :right)); @test s.cursor == (s.grid_rows, s.grid_cols)
+    # `r` turns the pending particle by moving which of its sites meets the anchor.
+    m = RE.EditorModel(UnitSquare)
+    m.focus = :construction
+    RE.update!(m, Tachikoma.KeyEvent('r'))
+    @test m.incoming == 2
+    RE.update!(m, Tachikoma.KeyEvent('R'))
+    @test m.incoming == 1
+    RE.update!(m, Tachikoma.KeyEvent('R'))
+    @test m.incoming == nsites(UnitSquare)
 
-    s = _mkstate(SquareLat(), UnitSquare; cursor=(2, 3), active_species=1, active_rot=2)
-    _handle_key!(s, Key(:enter, nothing))
-    @test s.cells[(2, 3)] == (1, 2)
+    # The turn shows in the drawing, because the ghost's sites are named where they sit.
+    _cons = (RE.SIDEBAR_W + RE.PANE_W + 1):(RE.SIDEBAR_W + 2 * RE.PANE_W)
+    _canvas(tb) = [collect(Tachikoma.row_text(tb, y))[_cons] for y in 1:32]
+    m = RE.EditorModel(UnitSquare)
+    m.showconstruction = true
+    m.focus = :construction
+    before = _canvas(_render(m))
+    RE.update!(m, Tachikoma.KeyEvent('r'))
+    @test _canvas(_render(m)) != before
 
-    # Placing on an occupied cell is a no-op.
-    s.active_species = 2
-    _ensure_species!(s, 2)
-    _handle_key!(s, Key(:enter, nothing))
-    @test s.cells[(2, 3)] == (1, 2)  # unchanged
+    # A contact carries both of the colors it joins, written side by side.
+    m = RE.EditorModel(UnitSquare)
+    m.showconstruction = true
+    _attach!(m, 1, 1, 3)
+    @test RE.contacts(m.placements, m.species) == [(RE.absolutesites(m.placements, m.species)[1][1].pose.x, 1, 1, 1, 3)]
+    @test !isnothing(Tachikoma.find_text(_render(m), "13"))
 
-    # Space erases.
-    _handle_key!(s, Key(:char, ' '))
-    @test !haskey(s.cells, (2, 3))
+    # Colors are the ones the rules assign, so each species gets its own range rather than every
+    # species being labelled 1, 2, 3 and disagreeing with the interaction matrix.
+    m = RE.EditorModel(UnitSquare)
+    m.showconstruction = true
+    _attach!(m, 1, 1, 3)
+    RE.update!(m, Tachikoma.KeyEvent('2'))  # `_attach!` left the focus on the build pane
+    _attach!(m, 1, 2, 4)
+    gc = RE.sitecolors(m)
+    @test [gc[(1, k)] for k in 1:4] == 1:4
+    @test [gc[(2, k)] for k in 1:4] == 5:8
+    @test ncolors(RE.buildrules(m.placements, m.species)) == 8
+    # The bond between species 1 site 2 and species 2 site 4 is (2, 8), and reads that way.
+    @test (2, 8) in RE.bonded_colors(RE.buildrules(m.placements, m.species))
+    @test !isnothing(Tachikoma.find_text(_render(m), "28"))
 
-    # Then Enter places (now that cell is empty).
-    _handle_key!(s, Key(:enter, nothing))
-    @test s.cells[(2, 3)] == (2, 2)  # active_species=2 now
+    # The pending bond is labelled the same way, anchor colour then the ghost site meeting it.
+    m = RE.EditorModel(UnitSquare)
+    m.showconstruction = true
+    m.focus = :construction
+    m.anchor = findfirst(==((1, 2)), m.free)
+    m.incoming = 4
+    @test !isnothing(Tachikoma.find_text(_render(m), "24"))
+    RE.update!(m, Tachikoma.KeyEvent('r'))  # turn the ghost, the pairing changes with it
+    @test !isnothing(Tachikoma.find_text(_render(m), "21"))
 
-    # Cursor on empty cell rotates active_rot only.
-    s = _mkstate(SquareLat(), UnitSquare; cursor=(1, 1), active_rot=0)
-    _handle_key!(s, Key(:char, 'r'))
-    @test s.active_rot == 1
-    _handle_key!(s, Key(:char, 'R'))
-    @test s.active_rot == 0
+    # Digits add species instances lazily and make them active.
+    m = RE.EditorModel(UnitSquare)
+    m.focus = :construction
+    @test length(m.species) == 1
+    RE.update!(m, Tachikoma.KeyEvent('3'))
+    @test m.active_species == 3
+    @test length(m.species) == 3
+    RE.update!(m, Tachikoma.KeyEvent('1'))
+    @test m.active_species == 1
+    @test length(m.species) == 3  # does not shrink; the sidebar decides what to show
+    RE.update!(m, Tachikoma.KeyEvent('0'))
+    @test m.active_species == 1   # digits outside 1-9 are ignored
 
-    # Cursor on a placed tile rotates the tile AND syncs active_rot.
-    s.cells[(1, 1)] = (1, 2)
-    _handle_key!(s, Key(:char, 'r'))
-    @test s.cells[(1, 1)] == (1, 3)
-    @test s.active_rot == 3
-    _handle_key!(s, Key(:char, 'R'))
-    @test s.cells[(1, 1)] == (1, 2)
-    @test s.active_rot == 2
+    # Backspace undoes the last attachment, and never removes the seed particle.
+    m = RE.EditorModel(UnitSquare)
+    _attach!(m, 1, 1, 3)
+    RE.update!(m, Tachikoma.KeyEvent(:backspace))
+    @test length(m.placements) == 1
+    RE.update!(m, Tachikoma.KeyEvent(:backspace))
+    @test length(m.placements) == 1
 
-    # Wraps around n_rotations (4 for square).
-    s.cells[(1, 1)] = (1, 3)
-    _handle_key!(s, Key(:char, 'r'))
-    @test s.cells[(1, 1)] == (1, 0)
+    # `c` clears back to a single particle, `n` seeds a disconnected one.
+    m = RE.EditorModel(UnitSquare)
+    _attach!(m, 1, 1, 3)
+    RE.update!(m, Tachikoma.KeyEvent('n'))
+    @test length(m.placements) == 3
+    @test isempty(RE.inferred_bonds(m.placements, m.species)) == false  # the bonded pair remains
+    RE.update!(m, Tachikoma.KeyEvent('c'))
+    @test length(m.placements) == 1
 
-    s = _mkstate(SquareLat(), UnitSquare)
-    @test length(s.species) == 1
-    @test s.active_species == 1
+    # Two species: the returned rules keep both, renumbered from one.
+    m = RE.EditorModel(UnitSquare)
+    m.focus = :construction
+    RE.update!(m, Tachikoma.KeyEvent('2'))
+    _attach!(m, 1, 1, 3)
+    rules = RE.buildrules(m.placements, m.species)
+    @test nspecies(rules) == 2
 
-    _handle_key!(s, Key(:char, '3'))
-    @test s.active_species == 3
-    @test length(s.species) == 3  # extended by _ensure_species!
+    # `q` and escape accept; nothing else does.
+    m = RE.EditorModel(UnitSquare)
+    RE.update!(m, Tachikoma.KeyEvent(:up))
+    @test !m.quit
+    RE.update!(m, Tachikoma.KeyEvent('q'))
+    @test m.quit
+    m = RE.EditorModel(UnitSquare)
+    RE.update!(m, Tachikoma.KeyEvent(:escape))
+    @test m.quit
 
-    _handle_key!(s, Key(:char, '1'))
-    @test s.active_species == 1
-    @test length(s.species) == 3  # doesn't shrink; visibility handled separately
+    # End to end: an L trimer of squares gives rules that enumerate.
+    m = RE.EditorModel(UnitSquare)
+    _attach!(m, 1, 1, 3)
+    _attach!(m, 1, 2, 4)
+    rules = RE.buildrules(m.placements, m.species)
+    @test rules isa BindingRules
+    @test polyenum(rules; maxsize=3, maxstrs=100).nstructures > 0
 
-    # Digits outside 1-9 are ignored.
-    _handle_key!(s, Key(:char, '0'))
-    @test s.active_species == 1
+    # Rendering: every pane is drawn, and the rules pane shows both tables at once.
+    m = RE.EditorModel(UnitSquare)
+    m.showconstruction = true
+    _attach!(m, 1, 1, 3)
+    tb = _render(m)
+    @test !isnothing(Tachikoma.find_text(tb, "╭─ Enumeration"))
+    @test !isnothing(Tachikoma.find_text(tb, "Editor"))
+    @test !isnothing(Tachikoma.find_text(tb, "╭─ Construction"))
+    @test !isnothing(Tachikoma.find_text(tb, "╭─ Rules"))
+    @test !isnothing(Tachikoma.find_text(tb, "species 1"))
+    @test !isnothing(Tachikoma.find_text(tb, string(RE.bondglyph())))  # the matrix marks the bond
+    @test !isnothing(Tachikoma.find_text(tb, "1 ─ 3"))                 # and the list names it
 
-    s = _mkstate(SquareLat(), UnitSquare;
-                    cells=Dict((1,1) => (1, 0), (2,2) => (1, 0)))
-    _handle_key!(s, Key(:char, 'c'))
-    @test isempty(s.cells)
+    # `b` hides the construction pane; the rules stay, since they are what the editor produces.
+    RE.update!(m, Tachikoma.KeyEvent('b'))
+    @test isnothing(Tachikoma.find_text(_render(m), "╭─ Construction"))
+    @test !isnothing(Tachikoma.find_text(_render(m), "╭─ Rules"))
+    RE.update!(m, Tachikoma.KeyEvent('b'))
+    @test !isnothing(Tachikoma.find_text(_render(m), "╭─ Construction"))
 
-    # 'q' returns true (quit signal).
-    @test _handle_key!(s, Key(:char, 'q')) == true
+    # A narrow terminal drops the enumeration first, then the construction.
+    @test isnothing(Tachikoma.find_text(_render(m, RE.SIDEBAR_W + 2 * RE.PANE_W, 32), "╭─ Enumeration"))
+    @test !isnothing(Tachikoma.find_text(_render(m, RE.SIDEBAR_W + 2 * RE.PANE_W, 32), "╭─ Construction"))
+    @test isnothing(Tachikoma.find_text(_render(m, RE.SIDEBAR_W + RE.PANE_W, 32), "╭─ Construction"))
+    @test !isnothing(Tachikoma.find_text(_render(m, RE.SIDEBAR_W + RE.PANE_W, 32), "╭─ Rules"))
 
-    # Other keys return false.
-    @test _handle_key!(s, Key(:arrow, :up)) == false
+    # The enumeration waits to be asked, so it opens saying so rather than having run.
+    m = RE.EditorModel(UnitSquare)
+    @test m.stale
+    @test !isnothing(Tachikoma.find_text(_render(m), "press e to enumerate"))
+
+    # A bond can be set from the rules pane, without placing anything.
+    @test m.focus === :rules
+    @test m.pair == (1, 1)
+    RE.update!(m, Tachikoma.KeyEvent(:down))
+    RE.update!(m, Tachikoma.KeyEvent(:right))
+    @test m.pair == (2, 2)
+    @test !interactionmatrix(m.rules)[2, 2]
+    RE.update!(m, Tachikoma.KeyEvent(:enter))
+    @test interactionmatrix(m.rules)[2, 2]
+    @test nbonds(m.rules) == 1
+    RE.update!(m, Tachikoma.KeyEvent(:enter))  # enter toggles, so it comes off again
+    @test !interactionmatrix(m.rules)[2, 2]
+
+    # The cursor wraps, and a hand-set bond survives further attachments.
+    m = RE.EditorModel(UnitSquare)
+    for _ in 1:nsites(UnitSquare)
+        RE.update!(m, Tachikoma.KeyEvent(:right))
+    end
+    @test m.pair == (1, 1)
+    m.pair = (2, 2)
+    RE.update!(m, Tachikoma.KeyEvent(:enter))
+    m.focus = :construction
+    _attach!(m, 1, 1, 3)
+    @test interactionmatrix(m.rules)[2, 2]   # kept
+    @test interactionmatrix(m.rules)[1, 3]   # and the geometry still contributes
+
+    # Clearing a bond the geometry keeps producing holds it cleared.
+    m = RE.EditorModel(UnitSquare)
+    _attach!(m, 1, 1, 3)
+    @test interactionmatrix(m.rules)[1, 3]
+    RE.togglebond!(m, (1, 3))
+    @test !interactionmatrix(m.rules)[1, 3]
+    _attach!(m, 2, 2, 4)                     # a further contact does not bring it back
+    @test !interactionmatrix(m.rules)[1, 3]
+    @test interactionmatrix(m.rules)[2, 4]
+
+    # The pair list is a display beside the matrix, not a second cursor: it marks whichever pair
+    # the matrix cursor is on, and the arrows always move the matrix.
+    m = RE.EditorModel(UnitSquare)
+    _attach!(m, 1, 1, 3)
+    _attach!(m, 1, 2, 4)
+    m.focus = :rules
+    @test length(bonded_colors(m.rules)) == 2
+    m.pair = (1, 1)
+    RE.update!(m, Tachikoma.KeyEvent(:right))
+    @test m.pair == (1, 2)  # a column step, not a jump to the next listed bond
+
+    # The enumeration runs only when asked, and changing the rules marks the last run stale.
+    m = RE.EditorModel(UnitSquare)
+    @test isempty(m.polyforms)
+    _attach!(m, 1, 1, 3)
+    @test m.stale
+    @test isempty(m.polyforms)   # attaching does not pay for an enumeration
+    _enumerate!(m)
+    @test !m.stale
+    @test !isempty(m.polyforms)
+    @test all(p -> nparticles(p) > 0, m.polyforms)
+    @test all(p -> nparticles(p) <= m.maxsize, m.polyforms)
+    @test length(m.polyforms) <= m.maxstrs
+    chain = length(m.polyforms)
+    @test !isnothing(Tachikoma.find_text(_render(m), "╭─ Enumeration"))
+
+    # A rule set that also bonds 2 to 4 allows strictly more structures.
+    RE.togglebond!(m, (2, 4))
+    @test m.stale
+    _enumerate!(m)
+    @test length(m.polyforms) > chain
+
+    # Taking every bond away empties it again.
+    RE.togglebond!(m, (2, 4))
+    RE.togglebond!(m, (1, 3))
+    _enumerate!(m)
+    @test isempty(m.polyforms)
+    @test m.enuminfo == "no bonds"
+
+    # The bounds are adjustable, and moving either marks the run stale rather than re-running.
+    m = RE.EditorModel(UnitSquare)
+    _attach!(m, 1, 1, 3)
+    _enumerate!(m)
+    @test !m.stale
+    m.focus = :enumeration
+    size0, strs0 = m.maxsize, m.maxstrs
+    RE.update!(m, Tachikoma.KeyEvent('S'))
+    @test m.maxsize == size0 + 1
+    @test m.stale
+    RE.update!(m, Tachikoma.KeyEvent('s'))
+    @test m.maxsize == size0
+    RE.update!(m, Tachikoma.KeyEvent('X'))
+    @test m.maxstrs > strs0
+    RE.update!(m, Tachikoma.KeyEvent('x'))
+    @test m.maxstrs == strs0
+    for _ in 1:20
+        RE.update!(m, Tachikoma.KeyEvent('s'))
+    end
+    @test m.maxsize == first(RE.MAXSIZE_RANGE)   # clamped
+    for _ in 1:20
+        RE.update!(m, Tachikoma.KeyEvent('X'))
+    end
+    @test m.maxstrs == last(RE.MAXSTRS_RANGE)
+
+    # A smaller cap really does cut the run short.
+    m = RE.EditorModel(UnitSquare)
+    _attach!(m, 1, 1, 3)
+    RE.togglebond!(m, (2, 4))
+    m.maxsize = 3
+    _enumerate!(m)
+    @test all(p -> nparticles(p) <= 3, m.polyforms)
+
+    # The enumeration pane takes a selection, which the detail box draws on its own.
+    m = RE.EditorModel(UnitSquare)
+    _attach!(m, 1, 1, 3)
+    _enumerate!(m)
+    m.focus = :enumeration
+    @test m.selected == 1
+    RE.update!(m, Tachikoma.KeyEvent(:right))
+    @test m.selected == 2
+    RE.update!(m, Tachikoma.KeyEvent(:left))
+    @test m.selected == 1
+    RE.update!(m, Tachikoma.KeyEvent(:left))
+    @test m.selected == 1  # clamped rather than wrapping, so the ends stay put
+    @test !isnothing(Tachikoma.find_text(_render(m), "1 particle"))
+    RE.update!(m, Tachikoma.KeyEvent(:right))
+    @test !isnothing(Tachikoma.find_text(_render(m), "2 particles"))
+
+    # The detail box reports the selection's composition vector: species counts, then bond counts.
+    tb = _render(m)
+    @test !isnothing(Tachikoma.find_text(tb, "spc"))
+    @test !isnothing(Tachikoma.find_text(tb, "bnd"))
+
+    # It also names every site, writing both colors where two meet, so a bond can be read off
+    # against the matrix. The dimer bonds colors 1 and 3, so that pair appears.
+    @test !isnothing(Tachikoma.find_text(tb, "13"))
+
+    # A particle carries a stroke away from its first site, so its orientation is visible. It is
+    # drawn onto the same canvas as the outline, so turning a particle changes the drawing even
+    # where no label moves.
+    cv = Tachikoma.Canvas(20, 10)
+    v = RE.fitworld([(1, one(Roly.posetype(UnitSquare)))], [UnitSquare], 20, 10)
+    pts = RE.outline(UnitSquare, one(Roly.posetype(UnitSquare)))
+    @test all(iszero, cv.dots)
+    RE.drawheading!(cv, v, one(Roly.posetype(UnitSquare)), UnitSquare, pts)
+    @test any(!iszero, cv.dots)
+
+    # Too small to read as a direction, so nothing is drawn.
+    small = Tachikoma.Canvas(3, 2)
+    vsmall = RE.fitworld([(1, one(Roly.posetype(UnitSquare)))], [UnitSquare], 3, 2)
+    RE.drawheading!(small, vsmall, one(Roly.posetype(UnitSquare)), UnitSquare, pts)
+    @test all(iszero, small.dots)
+
+    # Clearing the construction keeps the rules it produced, so an arrangement can be built to
+    # discover a bond and then cleared away.
+    m = RE.EditorModel(UnitSquare)
+    m.showconstruction = true
+    _attach!(m, 1, 1, 3)
+    @test interactionmatrix(m.rules)[1, 3]
+    RE.update!(m, Tachikoma.KeyEvent('c'))
+    @test length(m.placements) == 1
+    @test isempty(RE.inferred_bonds(m.placements, m.species))  # the drawing really is empty
+    @test interactionmatrix(m.rules)[1, 3]                     # the rule is not
+
+    # A placement can meet several particles at once, and every bond it would make is reported
+    # before it is committed, not only the one aimed at.
+    m = RE.EditorModel(UnitSquare)
+    @test length(RE.pendingcontacts(m, RE.previewpose(m))) == 1  # nothing to close yet
+    _attach!(m, 1, 1, 3)
+    _attach!(m, 1, 2, 4)
+    m.anchor = findfirst(==((2, 2)), m.free)
+    m.incoming = 1
+    pending = RE.pendingcontacts(m, RE.previewpose(m))
+    @test length(pending) == 2  # the site aimed at, and the one across the block
+    @test (2, 2) in [(i, k) for (_, i, k, _) in pending]
+    @test (3, 1) in [(i, k) for (_, i, k, _) in pending]
+
+    # Committing it really does make both.
+    before = length(RE.inferred_bonds(m.placements, m.species))
+    RE.update!(m, Tachikoma.KeyEvent(:enter))
+    @test length(RE.inferred_bonds(m.placements, m.species)) == before + 2
+
+    # A placement that would overlap is refused, and looks refused before enter is pressed: the
+    # ghost is drawn in the error color and the sidebar names what is in the way.
+    disk = PatchyDisk([0.0, π / 6])   # patches close enough that two neighbours intersect
+    m = RE.EditorModel(disk)
+    m.showconstruction = true
+    _attach!(m, 1, 1, 2)
+    m.anchor = findfirst(==((1, 2)), m.free)
+    m.incoming = 2
+    @test RE.blockedby(m, RE.previewpose(m)) == 2
+    @test !isnothing(Tachikoma.find_text(_render(m), "blocked by 2"))
+    RE.update!(m, Tachikoma.KeyEvent(:enter))
+    @test length(m.placements) == 2               # refused
+    @test m.message == "overlaps particle 2"
+    @test m.messagekind === :warning
+
+    # A refused placement is crossed out rather than given a heading, and drawn in a neutral gray:
+    # red is one of the species colors, so a red ghost reads as another species.
+    pose = one(Roly.posetype(UnitSquare))
+    pts = RE.outline(UnitSquare, pose)
+    v = RE.fitworld([(1, pose)], [UnitSquare], 20, 10)
+    cv = Tachikoma.Canvas(20, 10)
+    RE.drawreject!(cv, v, pts)
+    cross = copy(cv.dots)
+    @test any(!iszero, cross)
+    fill!(cv.dots, 0x00)
+    RE.drawheading!(cv, v, pose, UnitSquare, pts)
+    @test cross != cv.dots
+
+    # Patches far enough apart seat cleanly and nothing is blocked.
+    m = RE.EditorModel(PatchyDisk([0.0, π / 3]))
+    m.showconstruction = true
+    _attach!(m, 1, 1, 2)
+    m.anchor = findfirst(==((1, 2)), m.free)
+    m.incoming = 2
+    @test isnothing(RE.blockedby(m, RE.previewpose(m)))
+    RE.update!(m, Tachikoma.KeyEvent(:enter))
+    @test length(m.placements) == 3
+
+    # Species are added and dropped from the rules pane, which is where they matter when there
+    # is no construction to place them in.
+    m = RE.EditorModel(UnitSquare)
+    @test m.focus === :rules
+    RE.update!(m, Tachikoma.KeyEvent('a'))
+    RE.update!(m, Tachikoma.KeyEvent('a'))
+    @test length(m.species) == 3
+    @test m.active_species == 3        # the new one becomes active
+    @test ncolors(m.rules) == 12
+
+    # A species carrying a bond is kept, with a note rather than a silent loss.
+    m.pair = (1, 9)
+    RE.update!(m, Tachikoma.KeyEvent(:enter))
+    @test nbonds(m.rules) == 1
+    RE.update!(m, Tachikoma.KeyEvent('d'))
+    @test length(m.species) == 3
+    @test m.message == "species 3 has bonds"
+    @test m.messagekind === :warning
+
+    # Clear the bond and it goes.
+    RE.update!(m, Tachikoma.KeyEvent(:enter))
+    RE.update!(m, Tachikoma.KeyEvent('d'))
+    @test length(m.species) == 2
+    @test ncolors(m.rules) == 8
+    @test m.messagekind === :info
+
+    # A placed species is kept too, and the last one is never dropped.
+    m = RE.EditorModel(UnitSquare)
+    RE.update!(m, Tachikoma.KeyEvent('a'))
+    m.focus = :construction
+    RE.update!(m, Tachikoma.KeyEvent('2'))
+    _attach!(m, 1, 1, 3)
+    m.focus = :rules
+    RE.update!(m, Tachikoma.KeyEvent('d'))
+    @test length(m.species) == 2
+    @test m.message == "species 2 is placed"
+    m = RE.EditorModel(UnitSquare)
+    RE.update!(m, Tachikoma.KeyEvent('d'))
+    @test length(m.species) == 1
+    @test m.messagekind === :warning
+
+    # Digits pick the active species, and only the construction pane has an active species.
+    m = RE.EditorModel(UnitSquare)
+    RE.update!(m, Tachikoma.KeyEvent('3'))
+    @test length(m.species) == 1   # ignored in the rules pane
+    m.focus = :construction
+    RE.update!(m, Tachikoma.KeyEvent('3'))
+    @test length(m.species) == 3
+    @test m.active_species == 3
+
+    # The species live in the construction pane, as a strip marking the one the next placement
+    # would use, so nothing about them is on screen while there is nothing to place them in.
+    m = RE.EditorModel(UnitSquare)
+    RE.update!(m, Tachikoma.KeyEvent('a'))
+    @test isnothing(Tachikoma.find_text(_render(m), "▶"))
+    RE.update!(m, Tachikoma.KeyEvent('b'))
+    @test m.showconstruction
+    tb = _render(m)
+    @test !isnothing(Tachikoma.find_text(tb, "▶"))
+    # The strip is inside the construction pane, not the sidebar.
+    @test Tachikoma.find_text(tb, "▶").x > RE.SIDEBAR_W
+
+    # Zoom belongs to the construction pane, whose drawing it scales, and does nothing elsewhere.
+    m = RE.EditorModel(UnitSquare)
+    m.showconstruction = true
+    _attach!(m, 1, 1, 3)
+    _render(m)
+    scale = m.scale
+    m.focus = :rules
+    RE.update!(m, Tachikoma.KeyEvent('='))
+    @test m.scale == scale
+    @test !m.manualzoom
+    m.focus = :construction
+    RE.update!(m, Tachikoma.KeyEvent('='))
+    @test m.scale > scale
+
+    # Each enumerated structure is numbered by its position, and the detail box says which it is
+    # showing.
+    m = RE.EditorModel(UnitSquare)
+    _attach!(m, 1, 1, 3)
+    RE.togglebond!(m, (2, 4))
+    _enumerate!(m)
+    @test length(m.polyforms) > 3
+    m.focus = :enumeration
+    RE.update!(m, Tachikoma.KeyEvent(:right))
+    RE.update!(m, Tachikoma.KeyEvent(:right))
+    @test m.selected == 3
+    @test !isnothing(Tachikoma.find_text(_render(m), "#3"))
+
+    # The status line carries the last message and a running count.
+    m = RE.EditorModel(UnitSquare)
+    RE.update!(m, Tachikoma.KeyEvent('a'))
+    tb = _render(m)
+    @test !isnothing(Tachikoma.find_text(tb, "added species 2"))
+    @test !isnothing(Tachikoma.find_text(tb, "2 species"))
+
+    # A patchy disk works the same way as a polygon: it is drawn as its bounding circle with its
+    # patches named on the rim, and the heading triangle points away from patch 1, which is the
+    # only cue a disk gives about its orientation at all.
+    disk = PatchyDisk([0.0, 2π / 3, 4π / 3])
+    m = RE.EditorModel(disk)
+    m.showconstruction = true
+    @test length(m.free) == nsites(disk)
+    _attach!(m, 1, 1, 2)
+    @test RE.inferred_bonds(m.placements, m.species) == [(1, 2)]
+    _enumerate!(m)
+    @test !isempty(m.polyforms)
+    tb = _render(m)
+    @test !isnothing(Tachikoma.find_text(tb, "╭─ Construction"))
+    cv = Tachikoma.Canvas(20, 10)
+    v = RE.fitworld([(1, one(Roly.posetype(disk)))], [disk], 20, 10)
+    RE.drawheading!(cv, v, one(Roly.posetype(disk)), disk, RE.outline(disk, one(Roly.posetype(disk))))
+    @test any(!iszero, cv.dots)
+
+    # Species created from the rules pane appear in the gallery, not only placed ones.
+    m = RE.EditorModel(UnitSquare)
+    RE.update!(m, Tachikoma.KeyEvent('a'))
+    @test isempty(RE.usedspecies(m.placements)) == false
+    @test RE.usedspecies(m.placements) == [1]   # species 2 has never been placed
+    tb = _render(m)
+    @test !isnothing(Tachikoma.find_text(tb, "species 1"))
+    @test !isnothing(Tachikoma.find_text(tb, "species 2"))
+
+    # Selecting species 2 and then 3 without placing either leaves both in the rules, so the
+    # matrix grows rather than swapping one for the other.
+    m = RE.EditorModel(UnitSquare)
+    m.focus = :construction
+    @test ncolors(m.rules) == 4
+    RE.update!(m, Tachikoma.KeyEvent('2'))
+    @test ncolors(m.rules) == 8
+    RE.update!(m, Tachikoma.KeyEvent('3'))
+    @test ncolors(m.rules) == 12
+    RE.update!(m, Tachikoma.KeyEvent('4'))
+    @test ncolors(m.rules) == 16
+    RE.update!(m, Tachikoma.KeyEvent('1'))
+    @test ncolors(m.rules) == 16  # selecting a lower one does not drop the others
+
+    # The camera holds still while the structure fits, so attaching does not move what is
+    # already drawn.
+    m = RE.EditorModel(UnitSquare)
+    m.showconstruction = true
+    _render(m)
+    scale0 = m.scale
+    _attach!(m, 1, 1, 3)
+    _render(m)
+    @test m.scale == scale0
+    @test (m.cx, m.cy) == (0.0, 0.0)
+
+    # A chain long enough to leave the view zooms out, and never zooms back in on its own.
+    for _ in 1:12
+        _attach!(m, length(m.placements), 1, 3)
+        _render(m)
+    end
+    @test m.scale < scale0
+    zoomed = m.scale
+
+    # Trimming the chain back down leaves the camera where it was, so the remaining particles
+    # do not jump, until `0` asks for a refit.
+    for _ in 1:6
+        RE.update!(m, Tachikoma.KeyEvent(:backspace))
+        _render(m)
+    end
+    @test m.scale == zoomed
+    RE.update!(m, Tachikoma.KeyEvent('0'))
+    _render(m)
+    @test m.scale > zoomed
+
+    # `-` and `=` zoom, and hold the cursor still on screen while doing it.
+    m = RE.EditorModel(UnitSquare)
+    m.showconstruction = true
+    _attach!(m, 1, 1, 3)
+    _render(m)
+    s0 = m.scale
+    p = RE.anchorposition(m)
+    offset(m) = ((p[1] - m.cx) * m.scale, (p[2] - m.cy) * m.scale)
+    was = offset(m)
+    RE.update!(m, Tachikoma.KeyEvent('='))
+    @test m.scale > s0
+    @test m.manualzoom
+    @test all(isapprox.(offset(m), was))
+    RE.update!(m, Tachikoma.KeyEvent('-'))
+    @test m.scale ≈ s0
+    @test all(isapprox.(offset(m), was))
+    RE.update!(m, Tachikoma.KeyEvent('+'))  # a synonym for `=`
+    @test m.scale > s0
+
+    # A view chosen by hand is not undone by the next attachment, until `0` asks for a refit.
+    zoomed = m.scale
+    _attach!(m, 1, 2, 4)
+    _render(m)
+    @test m.scale == zoomed
+    RE.update!(m, Tachikoma.KeyEvent('0'))
+    _render(m)
+    @test !m.manualzoom
+
+    # Either direction is clamped to a fixed range about the opening view.
+    for _ in 1:100
+        RE.update!(m, Tachikoma.KeyEvent('='))
+    end
+    @test m.scale ≈ m.basescale * RE.ZOOM_RANGE
+    for _ in 1:400
+        RE.update!(m, Tachikoma.KeyEvent('-'))
+    end
+    @test m.scale ≈ m.basescale / RE.ZOOM_RANGE
+
+    # Free sites are ordered clockwise around the structure, so stepping the anchor walks the
+    # perimeter rather than jumping between particles in the order they were placed.
+    m = RE.EditorModel(UnitSquare)
+    @test issorted(_bearings(m); rev=true)
+    _attach!(m, 1, 1, 3)
+    _attach!(m, 1, 2, 4)
+    _attach!(m, 2, 2, 1)
+    _attach!(m, 4, 2, 4)
+    @test issorted(_bearings(m); rev=true)
+    @test length(unique(first.(m.free))) > 1  # the walk does interleave particles
+
+    # Attaching leaves the cursor next to the site it just used, rather than at whatever now
+    # holds the old index.
+    m = RE.EditorModel(UnitSquare)
+    m.anchor = 3
+    before = RE.anchorsite(m).pose.x
+    m.incoming = 3
+    RE.update!(m, Tachikoma.KeyEvent(:enter))
+    moved = sqrt(sum(abs2, RE.anchorsite(m).pose.x - before))
+    @test moved < 2 * Roly.bounding_radius(UnitSquare)
+
+    # Gallery scaling: the width is filled first, so species are laid out across rather than in
+    # one tall column, and the rows take what height is left.
+    @test RE.gallerylayout(2, 38, 14) == (2, 1, RE.GALLERY_ROW)
+    @test RE.gallerylayout(6, 38, 21)[1] == 3
+    @test isnothing(RE.gallerylayout(6, 38, 4))   # rows too short to read
+    @test isnothing(RE.gallerylayout(1, 8, 20))   # too narrow for any drawing
+
+    # When it declines, a one-line-per-species summary takes over, which the gallery never
+    # draws, so finding it means the fallback ran. It uses columns too.
+    m = _addspecies(7)
+    @test !isnothing(Tachikoma.find_text(_render(m, 104, 12), "3 ■"))
+
+    # A matrix too big for the rules pane moves to a full-height pane of its own rather than
+    # being dropped for the pair list.
+    m = _manyspecies(6)
+    @test ncolors(m.rules) == 36
+    tb = _render(m, 150, 26)
+    @test !isnothing(Tachikoma.find_text(tb, "╭─ Matrix"))
+    @test isnothing(Tachikoma.find_text(tb, "wider window"))
+
+    # Too big even for that, and the rules pane says so rather than leaving a gap.
+    @test !isnothing(Tachikoma.find_text(_render(m, 104, 26), "wider window"))
+    @test isnothing(Tachikoma.find_text(_render(m, 104, 26), "╭─ Matrix"))
+
+    # Small enough and it stays inline, beside the pair list.
+    m = _manyspecies(4, UnitSquare)
+    tb = _render(m, 170, 32)
+    @test isnothing(Tachikoma.find_text(tb, "╭─ Matrix"))
+    @test isnothing(Tachikoma.find_text(tb, "wider window"))
+
+    # A patchy disk works the same way as a polygon: it is drawn as its bounding circle with its
+    # patches named on the rim, and the heading triangle points away from patch 1, which is the
+    # only cue a disk gives about its orientation at all.
+    disk = PatchyDisk([0.0, 2π / 3, 4π / 3])
+    m = RE.EditorModel(disk)
+    m.showconstruction = true
+    @test length(m.free) == nsites(disk)
+    _attach!(m, 1, 1, 2)
+    @test RE.inferred_bonds(m.placements, m.species) == [(1, 2)]
+    _enumerate!(m)
+    @test !isempty(m.polyforms)
+    tb = _render(m)
+    @test !isnothing(Tachikoma.find_text(tb, "╭─ Construction"))
+    cv = Tachikoma.Canvas(20, 10)
+    v = RE.fitworld([(1, one(Roly.posetype(disk)))], [disk], 20, 10)
+    RE.drawheading!(cv, v, one(Roly.posetype(disk)), disk, RE.outline(disk, one(Roly.posetype(disk))))
+    @test any(!iszero, cv.dots)
+
+    # Species created from the rules pane appear in the gallery, not only placed ones.
+    m = RE.EditorModel(UnitSquare)
+    RE.update!(m, Tachikoma.KeyEvent('a'))
+    @test isempty(RE.usedspecies(m.placements)) == false
+    @test RE.usedspecies(m.placements) == [1]   # species 2 has never been placed
+    tb = _render(m)
+    @test !isnothing(Tachikoma.find_text(tb, "species 1"))
+    @test !isnothing(Tachikoma.find_text(tb, "species 2"))
+
+    # Selecting species 2 and then 3 without placing either leaves both in the rules, so the
+    # matrix grows rather than swapping one for the other.
+    m = RE.EditorModel(UnitSquare)
+    m.focus = :construction
+    @test ncolors(m.rules) == 4
+    RE.update!(m, Tachikoma.KeyEvent('2'))
+    @test ncolors(m.rules) == 8
+    RE.update!(m, Tachikoma.KeyEvent('3'))
+    @test ncolors(m.rules) == 12
+    RE.update!(m, Tachikoma.KeyEvent('4'))
+    @test ncolors(m.rules) == 16
+    RE.update!(m, Tachikoma.KeyEvent('1'))
+    @test ncolors(m.rules) == 16  # selecting a lower one does not drop the others
+
+    # The camera holds still while the structure fits, so attaching does not move what is
+    # already drawn.
+    m = RE.EditorModel(UnitSquare)
+    m.showconstruction = true
+    _render(m)
+    scale0 = m.scale
+    _attach!(m, 1, 1, 3)
+    _render(m)
+    @test m.scale == scale0
+    @test (m.cx, m.cy) == (0.0, 0.0)
+
+    # A chain long enough to leave the view zooms out, and never zooms back in on its own.
+    for _ in 1:12
+        _attach!(m, length(m.placements), 1, 3)
+        _render(m)
+    end
+    @test m.scale < scale0
+    zoomed = m.scale
+
+    # Trimming the chain back down leaves the camera where it was, so the remaining particles
+    # do not jump, until `0` asks for a refit.
+    for _ in 1:6
+        RE.update!(m, Tachikoma.KeyEvent(:backspace))
+        _render(m)
+    end
+    @test m.scale == zoomed
+    RE.update!(m, Tachikoma.KeyEvent('0'))
+    _render(m)
+    @test m.scale > zoomed
+
+    # `-` and `=` zoom, and hold the cursor still on screen while doing it.
+    m = RE.EditorModel(UnitSquare)
+    m.showconstruction = true
+    _attach!(m, 1, 1, 3)
+    _render(m)
+    s0 = m.scale
+    p = RE.anchorposition(m)
+    offset(m) = ((p[1] - m.cx) * m.scale, (p[2] - m.cy) * m.scale)
+    was = offset(m)
+    RE.update!(m, Tachikoma.KeyEvent('='))
+    @test m.scale > s0
+    @test m.manualzoom
+    @test all(isapprox.(offset(m), was))
+    RE.update!(m, Tachikoma.KeyEvent('-'))
+    @test m.scale ≈ s0
+    @test all(isapprox.(offset(m), was))
+    RE.update!(m, Tachikoma.KeyEvent('+'))  # a synonym for `=`
+    @test m.scale > s0
+
+    # A view chosen by hand is not undone by the next attachment, until `0` asks for a refit.
+    zoomed = m.scale
+    _attach!(m, 1, 2, 4)
+    _render(m)
+    @test m.scale == zoomed
+    RE.update!(m, Tachikoma.KeyEvent('0'))
+    _render(m)
+    @test !m.manualzoom
+
+    # Either direction is clamped to a fixed range about the opening view.
+    for _ in 1:100
+        RE.update!(m, Tachikoma.KeyEvent('='))
+    end
+    @test m.scale ≈ m.basescale * RE.ZOOM_RANGE
+    for _ in 1:400
+        RE.update!(m, Tachikoma.KeyEvent('-'))
+    end
+    @test m.scale ≈ m.basescale / RE.ZOOM_RANGE
+
+    # Free sites are ordered clockwise around the structure, so stepping the anchor walks the
+    # perimeter rather than jumping between particles in the order they were placed.
+    m = RE.EditorModel(UnitSquare)
+    @test issorted(_bearings(m); rev=true)
+    _attach!(m, 1, 1, 3)
+    _attach!(m, 1, 2, 4)
+    _attach!(m, 2, 2, 1)
+    _attach!(m, 4, 2, 4)
+    @test issorted(_bearings(m); rev=true)
+    @test length(unique(first.(m.free))) > 1  # the walk does interleave particles
+
+    # Attaching leaves the cursor next to the site it just used, rather than at whatever now
+    # holds the old index.
+    m = RE.EditorModel(UnitSquare)
+    m.anchor = 3
+    before = RE.anchorsite(m).pose.x
+    m.incoming = 3
+    RE.update!(m, Tachikoma.KeyEvent(:enter))
+    moved = sqrt(sum(abs2, RE.anchorsite(m).pose.x - before))
+    @test moved < 2 * Roly.bounding_radius(UnitSquare)
 end
