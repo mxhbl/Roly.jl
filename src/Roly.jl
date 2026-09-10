@@ -116,7 +116,9 @@ list moves to a full-height pane of its own.
 
 A site is drawn in a shade of its species' own hue, so its color says which particle it belongs
 to, and a matrix cell is split between the colors of the two sites it joins, the row's above and
-the column's below. Each particle carries a small filled triangle at its center pointing away
+the column's below. A color is written as one character while one is enough to tell them all
+apart, `1`-`9` then `a`-`z` then `A`-`Z`, and as two decimal digits past those 61; the editor
+stops adding species at 99 colors rather than naming two different sites the same way. Each particle carries a small filled triangle at its center pointing away
 from its first binding site, showing which way it is turned, left off wherever the particle is
 drawn too small for it to read as a direction.
 
@@ -124,8 +126,13 @@ With the construction focused, the arrow keys walk the cursor around the structu
 one free site at a time, taking whichever of the current site's two neighbors better matches the
 direction pressed, so no site is skipped and no key is dead; `,` and `.` step in perimeter order.
 `r`/`R` turn the pending particle by changing which of its sites meets the cursor, `t`/`T` pick
-the twist in 3D, enter attaches, backspace undoes, `n` starts a disconnected component, and `c`
-clears the drawing while keeping the rules it produced.
+the twist in 3D, enter attaches and backspace undoes.
+
+Structures are built in construction windows, and `n` opens another while `w` and `W` cycle
+through them. The rules are read off every window at once, so an arrangement can be kept on the
+books while the next is built beside it. `c` clears the window in front, taking with it the bonds
+that only that window produced and leaving the ones another window or a hand edit also accounts
+for; clearing an already empty window closes it, and the last one is always kept.
 
 Seating a particle against the chosen site can put it against several at once, which is how a
 ring closes. Every contact the pending particle would make is labelled before it is committed
@@ -147,19 +154,21 @@ composition vector underneath.
 declined to, and counts the species, bonds and placed particles.
 
 A 3D species is drawn in isometric projection, as the edges of the faces that turn toward the
-camera. Hidden edges go in two steps: within a particle, dropping the faces turned away removes
+camera, each face's edges in the shade its orientation gives it so that the drawing reads as a lit
+solid. Hidden edges go in two steps: within a particle, dropping the faces turned away removes
 exactly the edges on its far side, the body being convex; between particles, the drawing runs
 farthest first and each particle erases what its silhouette covers of everything already drawn
-behind it. The box beside the enumeration grid fills the faces instead, in three shades of the
-species' hue chosen by which way each face turns, a filled face being a whole cell and so needing
-that much room to read. A species with no polyhedron behind it is drawn as its bounding sphere's
-silhouette, the way a 2D species with no corners is drawn as a circle.
+behind it. A species with no polyhedron behind it is drawn as its bounding sphere's silhouette,
+the way a 2D species with no corners is drawn as a circle.
 
-`[` and `]` turn the camera about the vertical axis and `{` and `}` tilt it. Stepping the cursor
-onto a face on the far side turns the camera far enough to bring that face into view and no
-further, so the cursor is what is driven and the camera follows it. Only the sites on the near
-side are named, and a bond between two placed particles is left unlabelled, its two faces meeting
-inside the solid where nothing of them shows.
+`[` and `]` step the camera through eight viewpoints, one per octant, shared by every pane. The
+camera never moves on its own; what follows it is the cursor, the sites offered to attach to
+being the ones the camera can see, so the arrow keys walk the near side of the structure and
+turning the camera offers a different set. A face of a convex particle is visible from four of
+the eight, so every site is reachable. A small set of labelled axes in the corner of the
+construction pane and of the inspector says which way the camera is looking. Only the sites on
+the near side are named, and a bond between two placed particles is left unlabelled, its two
+faces meeting inside the solid where nothing of them shows.
 
 The construction view holds its zoom while you build, so attaching a particle leaves the rest of
 the structure where it was, and it zooms out only when the structure would leave the pane.

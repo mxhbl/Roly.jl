@@ -105,13 +105,23 @@ It is left off wherever the particle is drawn too small for it to read as a dire
 `a` adds a species and `d` drops the last one, each getting its own contiguous range of colors, so adding one widens the matrix by that species' worth of rows whether or not it is ever placed.
 Only the last can be dropped, so that the colors of the others do not shift under bonds already set, and one carrying a bond or a placement is kept with a note in the status line rather than silently taking those with it.
 
+A color is written as one character while one is enough to tell them all apart, `1` to `9`, then `a` to `z`, then `A` to `Z`, since a site label has to sit on the drawing at the site it names.
+Past those 61 it takes two, in decimal, which reads without counting through the alphabet, and the matrix and the pair list widen to match.
+Two characters run out at 99, and the editor stops adding species there rather than naming two different sites the same way: with a species of `n` sites that is `99 ÷ n` of them, three for icosahedra and sixteen for squares.
+
 ### Building a structure
 
 `b` brings in the construction pane, which is the other way to arrive at a bond table: place blocks and the rules are read off the contacts.
 Each attachment puts a copy of a species on one of the structure's free binding sites, which takes two choices: where to attach, and how the incoming particle is turned.
 The arrow keys walk the cursor around the perimeter, one free site at a time, each press taking whichever of the current site's two neighbors better matches the direction pressed, so a site is never skipped over and no key is ever dead; `,` and `.` step in perimeter order regardless of direction.
 `r` and `R` turn the pending particle, which changes which of its sites meets the cursor.
-The species appear as a strip along the top of this pane, marking the one the next placement would use, since that is the only thing choosing one decides; `Enter` attaches, backspace undoes, digits `1` to `9` pick the species to place, `n` starts a disconnected component, and `c` clears the drawing without clearing the rules it produced, so an arrangement can be built to discover a bond and then cleared away to build the next one.
+The species appear as a strip along the top of this pane, marking the one the next placement would use, since that is the only thing choosing one decides; `Enter` attaches, backspace undoes, and digits `1` to `9` pick the species to place.
+
+Structures are built in construction windows, one arrangement each.
+`n` opens another window and `w` and `W` cycle through them, the pane's title saying which is in front.
+The rules are read off every window at once, so an arrangement can be kept on the books while the next is built beside it, which is how two rules that no single structure can show at the same time are collected.
+`c` clears the window in front, and takes with it the bonds that only that window produced: one another window still produces, or that was set by hand, stays.
+Clearing a window that is already empty closes it, so the cycle does not fill up with empties, and the last window is cleared rather than closed.
 
 Seating a particle against the chosen site can put it against several at once, which is how a ring closes.
 Every contact the pending particle would make is labelled before it is committed, and the sidebar counts the ones beyond the site aimed at, so a closure is visible in advance rather than only after the fact.
@@ -140,31 +150,33 @@ Underneath it is the composition vector: how many particles of each species the 
 That box is worth reaching for: a thumbnail is only a few braille dots across, so a small structure can lose edges shorter than a dot, and the same structure enlarged is drawn properly.
 
 ```
-╭─ Editor ───────────╮╭─ Rules ──────────────────────────────────╮╭─ Construction ───────────── 4 particles ─╮╭─ Enumeration ───────── 200+ ≤ 6 ─╮
-│── Any pane ────────││species 1                                 ││▶■1                                       ││1            2   ⢀⣀⣀⣀             │
-│tab   next pane     ││                                          ││                                          ││   ⡏⠉⠉⡉⠉⠉⡇       ⢸  ⢸             │
-│b     hide build    ││                  ⡏⠉⠉3⠉⠉⡇                 ││                                          ││   ⡇ ⣰⣷⡀ ⡇       ⢸⠤⠤⢼             │
-│q     accept        ││                  2 ⣰⣷⡀ 4                 ││                                          ││   ⡇ ⠉⠉⠁ ⡇       ⢸  ⢸             │
-│                    ││                  ⡇ ⠉⠉⠁ ⡇                 ││                                          ││────────────     ⠘⠒⠒⠚             │
-│── Rules ───────────││                  ⠉⠉⠉1⠉⠉⠁                 ││                                          ││                                  │
-│  2 ─ 4  bonded     ││──────────────────────────────────────────││                                          ││3 ⢀⣀⣀⣀⣀⣀⣀⣀   4 ⢀⣀⣀⣀⣀⣀⣀⣀           │
-│↑↓←→  cell          ││  1 2 3 4                         1 ─ 2   ││                                          ││  ⢸   ⡇  ⢸     ⢸   ⡇  ⢸           │
-│enter bond          ││1 · ▀ ▀ ▀                         1 ─ 3   ││                                          ││  ⠸⠤⠤⠤⡧⠤⠤⢼     ⢸⠤⠤⠤⡧⠤⠤⠼           │
-│a / d add/drop      ││2 ▀ · · ▀                         1 ─ 4   ││                                          ││      ⡇  ⢸     ⢸   ⡇              │
-│                    ││3 ▀ · · ·                         2 ─ 4   ││             ⢰⠒⠒3⠒⢲⠒⠒3⠒⢲                  ││      ⠓⠒⠒⠚     ⠘⠒⠒⠒⠃              │
-│── Build ───────────││4 ▀ ▀ · ·                                 ││             2 ⢠⣧ 24⢠⣧ 4                  ││                                  │
-│  at 4.2 site 1     ││                                          ││             ⢸⣀⣉14⣸⣀⣉13⣸                  ││5 ⢀⣀⣀⣀⣀⣀⣀⣀   6  ⢀⣀⣀⡀              │
-│                    ││                                          ││             ⢸  ⣀⡄⢸  ⡄ ⢸                  ││  ⢸   ⡇  ⢸      ⢸  ⡇              │
-│↑↓←→  site          ││                                          ││             3 ⠉⠛⠇21⠼⠿⠄4                  ││  ⢸⠤⠤⠤⡧⠤⠤⢼      ⢸⠉⠉⡏⠉⢹            │
-│, .   step          ││                                          ││             ⢰⠒⠒21⢲⠒⠒1⠒⠚                  ││  ⢸   ⡇  ⢸      ⠈⠉⠉⡏⠉⢹            │
-│r / R turn          ││                                          ││             4 ⠹⡿⠁2                       ││  ⠘⠒⠒⠒⠓⠒⠒⠚         ⠓⠒⠚            │
-│enter attach        ││                                          ││             ⢸⣀⣀3⣀⣸                       ││                                  │
-│bksp  undo          ││                                          ││                                          ││                                  │
-│1-9   species       ││                                          ││                                          ││                                  │
-│n / c part/clear    ││                                          ││                                          ││                                  │
-│                    ││                                          ││                                          ││                                  │
-╰────────────────────╯╰──────────────────────────────────────────╯╰──────────────────────────────────────────╯╰──────────────────────────────────╯
-                                                                                                                      1 species  4 bonds  4 placed
+╭─ Editor ───────────╮╭─ Rules ──────────────────────────────────╮╭─ Construction ───────────── 4 particles ─╮╭─ Enumeration ─────────── 200+ ≤ 6 ─╮
+│── Any pane ────────││species 1                                 ││▶■1                                       ││1            2   ⢀⣀⣀⣀               │
+│tab   next pane     ││                                          ││                                          ││   ⡏⠉⠉⡉⠉⠉⡇       ⢸  ⢸               │
+│b     hide build    ││                  ⡏⠉⠉3⠉⠉⡇                 ││                                          ││   ⡇ ⣰⣷⡀ ⡇       ⢸⠤⠤⢼               │
+│q     accept        ││                  2 ⣰⣷⡀ 4                 ││                                          ││   ⡇ ⠉⠉⠁ ⡇       ⢸  ⢸               │
+│                    ││                  ⡇ ⠉⠉⠁ ⡇                 ││                                          ││────────────     ⠘⠒⠒⠚               │
+│── Rules ───────────││                  ⠉⠉⠉1⠉⠉⠁                 ││                                          ││                                    │
+│  1 ╌ 1             ││──────────────────────────────────────────││                                          ││3 ⢀⣀⣀⣀⣀⣀⣀⣀   4 ⢀⣀⣀⣀⣀⣀⣀⣀             │
+│↑↓←→  cell          ││  1 2 3 4                         1 ─ 2   ││                                          ││  ⢸   ⡇  ⢸     ⢸   ⡇  ⢸             │
+│enter bond          ││1 · ▀ ▀ ▀                         1 ─ 3   ││                                          ││  ⠸⠤⠤⠤⡧⠤⠤⢼     ⢸⠤⠤⠤⡧⠤⠤⠼             │
+│a / d add/drop      ││2 ▀ · · ▀                         1 ─ 4   ││                                          ││      ⡇  ⢸     ⢸   ⡇                │
+│                    ││3 ▀ · · ·                         2 ─ 4   ││                                          ││      ⠓⠒⠒⠚     ⠘⠒⠒⠒⠃                │
+│── Build ───────────││4 ▀ ▀ · ·                                 ││             ⢰⠒⠒3⠒⢲⠒⠒3⠒⢲                  ││                                    │
+│  at 4.2 site 1     ││                                          ││             2 ⢠⣧ 24⢠⣧ 4                  ││5 ⢀⣀⣀⣀⣀⣀⣀⣀   6  ⢀⣀⣀⡀                │
+│                    ││                                          ││             ⢸⣀⣉14⣸⣀⣉13⣸                  ││  ⢸   ⡇  ⢸      ⢸  ⡇                │
+│↑↓←→  site          ││                                          ││             ⢸  ⣀⡄⢸  ⡄ ⢸                  ││  ⢸⠤⠤⠤⡧⠤⠤⢼      ⢸⠉⠉⡏⠉⢹              │
+│, .   step          ││                                          ││             3 ⠉⠛⠇21⠼⠿⠄4                  ││  ⢸   ⡇  ⢸      ⠈⠉⠉⡏⠉⢹              │
+│r / R turn          ││                                          ││             ⢰⠒⠒21⢲⠒⠒1⠒⠚                  ││  ⠘⠒⠒⠒⠓⠒⠒⠚         ⠓⠒⠚              │
+│enter attach        ││                                          ││             4 ⠹⡿⠁2                       ││                                    │
+│bksp  undo          ││                                          ││             ⢸⣀⣀3⣀⣸                       ││7            8  ⢀⣀⣀⣀⣀⣀              │
+│- = 0 zoom/fit      ││                                          ││                                          ││ ⢸⠉⠉⢹⠉⠉⢹        ⢸  ⡇ ⢸              │
+│1-9   species       ││                                          ││                                          ││ ⠸⠤⠤⢼⠤⠤⢼⠤⠤⢤     ⠈⠉⠉⡏⠉⢹              │
+│n / w new/next      ││                                          ││                                          ││    ⢸  ⢸  ⢸        ⡏⠉⢹              │
+│c     clear/close   ││                                          ││                                          ││    ⠈⠉⠉⠉⠉⠉⠉        ⠓⠒⠚              │
+│                    ││                                          ││                                          ││                                    │
+╰────────────────────╯╰──────────────────────────────────────────╯╰──────────────────────────────────────────╯╰────────────────────────────────────╯
+                                                                                                                        1 species  4 bonds  4 placed
 ```
 
 The faint outline at the top is the pending attachment, drawn before it is committed.
@@ -177,52 +189,59 @@ So closing a ring reports bonds that no attachment named: the session above took
 
 ### Three dimensions
 
-A 3D species is drawn in isometric projection: an orthographic view from the direction (1, 1, 1), which is what makes depth easy to resolve, since nothing changes size with distance and a nearer convex particle simply covers what stands behind it.
+A 3D species is drawn in isometric projection: an orthographic view from one of the eight octant directions, which is what makes depth easy to resolve, since nothing changes size with distance and a nearer convex particle simply covers what stands behind it.
+The projection plane's axes are right-handed with the view direction, so a right-handed structure stays right-handed on screen.
 
-Particles are drawn as braille outlines, the edges of the faces that turn toward the camera.
+Particles are drawn as braille outlines, the edges of the faces that turn toward the camera, each face's edges in the shade its orientation gives it, so the drawing still reads as a lit solid rather than as a flat diagram.
+Three shades rather than a continuous lighting term: the terminal's 256-color cube has six levels per channel, and a smooth ramp quantizes two neighboring faces onto the same entry.
 Hidden edges go in two steps.
 Within a particle, dropping the faces turned away removes exactly the edges on its far side, the body being convex.
-Between particles, the drawing runs farthest first and each particle erases the dots its silhouette covers from everything already drawn behind it.
-The one exception is the box beside the enumeration grid, which fills the faces instead, in three shades of the species' hue picked by which way each face turns; a filled face is a whole cell, twice the width and four times the height of a braille dot, so it needs that much room to read.
+Between particles, the drawing runs farthest first and each particle erases the dots its silhouette covers from everything already drawn behind it, at braille-dot resolution rather than per cell.
 
-`[` and `]` turn the camera about the vertical axis and `{` and `}` tilt it.
-Most of the time neither is needed, because the camera follows the cursor: stepping onto a face on the far side of the structure turns the camera far enough to bring that face into view and no further, in the plane the view direction and the face normal span, so the structure stays recognizable across the move.
-The cursor is what you drive and the camera is what follows it, which is why the arrow keys mean the same thing in 3D as in 2D.
+`[` and `]` step the camera through the eight viewpoints, and every pane shares it, so the structure being built, the species drawings and the enumerated polyforms are all seen the same way round.
+The camera never moves on its own.
+What follows it is the cursor: the sites offered to attach to are the ones the camera can see, so the arrow keys walk the near side of the structure and turning the camera offers a different set.
+Every site is reachable, a face of a convex particle being visible from four of the eight viewpoints.
+A small set of labelled axes in the corner of the construction pane and of the inspector says which way the camera is currently looking.
 `t` and `T` pick which twist of the bond the incoming particle takes, a choice a 2D bond does not leave open.
 
 Only the sites on the near side are named, and a bond between two placed particles is left unlabelled: its two faces meet inside the solid, where a label would sit on whichever particle happens to stand in front of it.
-The species drawings in the rules pane name every site regardless, those on the far side dimmed, since that is the reference drawing of the species and a color in the matrix has to be findable in it.
+The species drawings in the rules pane name every site the camera shows, plus the two the rules cursor is on wherever they are, since pointing at a matrix cell has to point at something.
 
 Species with no polyhedron behind them are drawn as the silhouette of their bounding sphere, a circle, in the same way a 2D species with no corners is.
 [`PatchySphere`](@ref) therefore comes out as a circle with its near patches named, and occludes as a sphere.
 What the drawing does assume is convexity, which every built-in 3D species has.
 
-Below, three cubes bonded 1-2 and 3-4, with a fourth pending, and the enumeration run to size 4.
-The selected structure in the box on the right is filled; here its face colors are shown as shading.
+A species with many faces needs a bigger drawing before its labels stop landing on one another, so the gallery gives a box its width and height in proportion to the site count: an icosahedron is drawn several times the size of a cube.
+
+Below, three cubes bonded 3-4 and 5-6, with a fourth pending, and the enumeration run to size 4.
 
 ```
 ╭─ Editor ───────────╮╭─ Rules ──────────────────────────────────╮╭─ Construction ───────────── 3 particles ─╮╭─ Enumeration ───────────── 28 ≤ 4 ─╮
-│── Any pane ────────││species 1                                 ││▶■1                                       ││1    ⣀⢄⡀     2  ⢀⡠⢄⡀                │
-│tab   next pane     ││                    ⣀⢄⡀                   ││                                          ││  ⢠⣒⠉  ⠈⢑⣢     ⡮⢅⡀⢀⡠⠔⠤⣀             │
-│b     hide build    ││                 ⢠⣒⠉ 4⠈⢑⣢                 ││                                          ││  ⢸ ⠉⠒⡔⠊⠁⢸     ⡇ ⢸⠓⢄⡀⡠⠔⡇            │
-│q     accept        ││                 ⢸ 1⠒⡔2⠁⢸                 ││                                          ││  ⠸⣀  ⡇ ⢀⡸     ⠑⠢⢸  ⢸  ⡇            │
-│                    ││                 ⠸⣀5 36⢀⡸                 ││                                          ││    ⠉⠒⠗⠊⠁         ⠉⠒⠼⠒⠉             │
-│── Rules ───────────││                   ⠉⠒⠗⠊⠁                  ││                                          ││                                    │
-│  3 ─ 4  bonded     ││──────────────────────────────────────────││                                          ││3    ⢀⢄⡀     4                      │
-│↑↓←→  cell          ││  1 2 3 4 5 6                     1 ─ 2   ││                ⣀⢄⡀                       ││    ⡾⢥⣠⠼⡆     ⢠⣔⠊⠉⢀⢄⡀⠉⢒⣤            │
-│enter bond          ││1 · ▀ · · · ·                     3 ─ 4   ││             ⣠⠔⠊ 6⠈⠑⢤⣀                    ││    ⢇ ⡇⣀⠇     ⢸ ⠉⡾⢥⣠⠼⡆⠁⢸            │
-│a / d add/drop      ││2 ▀ · · · · ·                             ││             ⡏⠙⠲⢤⣀⠤⠒⠉4⠉⠒⠤⡀                ││    ⡇⠉⠋⠁⡇      ⠉⠒⢇⡀⣇⡠⠇⠊⠁            │
-│                    ││3 · · · ▀ · ·                             ││             ⡇ 3 ⡏⠑⠦⣀⢀⡠⠖⠉⡇                ││    ⠈⠒⠗⠉          ⠈⠁                │
-│── Build ───────────││4 · · ▀ · · ·                             ││             ⠑⠢⣀ ⡇ 5 ⡇ 6 ⡇                ││                                    │
-│  at 3.2 site 4     ││5 · · · · · ·                             ││                ⠉⠣⢄⡀ ⡇⢀⣀⠤⠒⠤⣀              ││5   ⣀⠤⣀      6     ⢀⢄⡀              │
-│                    ││6 · · · · · ·                             ││                 ⡇ ⠈⠑⡶⢍⡀ 2 ⣀⠭⡆            ││   ⡟⠦⣠⠔⠑⢢⡀     ⢀⡠⠔⡾⢥⣀⠬⢳             │
-│↑↓←→  site          ││                                          ││                 ⢇⡀6 ⡇ 24⡔⠊⠁ ⡇            ││   ⠣⢄⡏⠙⡞⢉⡇     ⢸⠉⠒⢇ ⡇⢀⡸             │
-│, .   step          ││                                          ││                  ⠈⠒⠤⡇ 6 ⡇ 3 ⡇            ││     ⠈⠑⠋⠁⡇     ⠘⠢⢄⡇⠉⠋⠁⢸             │
-│r / R turn          ││                                          ││                     ⠈⠑⠤⣀⣇⡠⠒⠉             ││────────────      ⠈⠒⠗⠊⠁             │
-│[ ]   turn          ││                                          ││                         ⠁                ││                                    │
-│{ }   tilt          ││                                          ││                                          ││                                    │
-│enter attach        ││                                          ││                                          ││                                    │
-│bksp  undo          ││                                          ││                                          ││                                    │
+│── Any pane ────────││species 1                                 ││▶■1                                       ││1    ⣀⢄⡀     2    ⣀⢄                │
+│tab   next pane     ││                    ⣀⢄⡀                   ││                                          ││  ⠠⣒⠉  ⠈⢑⡢       ⠚⠤⣀⠭⠂              │
+│b     hide build    ││                 ⠠⣒⠉ 4⠈⢑⡢                 ││                                          ││  ⢸ ⠉⠒⠔⠊⠁⢸       ⢇⡀⡇⢀⠇              │
+│[ ]   view 1/8      ││                 ⢸ ⠉⠒⠔⠊⠁⢸                 ││                                          ││  ⠸⣀  ⡇ ⢀⡸       ⡇⠈⠋⠁⡇              │
+│q     accept        ││                 ⠸⣀6 ⡇5⢀⡸                 ││                                          ││    ⠉⠒⠗⠊⠁        ⠈⠑⠗⠊               │
+│                    ││                   ⠉⠒⠗⠊⠁                  ││                                          ││                                    │
+│── Rules ───────────││──────────────────────────────────────────││                     ⡀                    ││3  ⢀⡠⣀       4    ⣀⢄⡀               │
+│  5 ─ 6  bonded     ││  1 2 3 4 5 6                     3 ─ 4   ││                 ⢀⡠⠒⠉⠈⠑⠢⣀                 ││  ⠪⢅⡀⣀⠤⠒⠤⣀       ⠈⠒⠔⠊               │
+│↑↓←→  cell          ││1 · · · · · ·                     5 ─ 6   ││              ⣀⠤⠢⢄⡀  4  ⣀⠭⠂               ││  ⡇ ⠈⠒⢄⡀⡠⠔⠁      ⠈⠒⠗⠊               │
+│enter bond          ││2 · · · · · ·                             ││           ⣠⠔⠊  2 ⠈⠒⠤⡀⠔⠊  ⡇               ││  ⠑⠢⢸⡀ ⠈  ⡇      ⠈⠒⠗⠊               │
+│a / d add/drop      ││3 · · · ▀ · ·                             ││           ⡏⠉⠒⠤⣀⢀⣀51⠉⡇ 1  ⡇               ││     ⠈⠑⠸⠒⠉       ⠈⠒⠗⠊               │
+│                    ││4 · · ▀ · · ·                             ││           ⡇ 6 ⠈⠉ 4  ⡇ ⢀⠤⠒⠁               ││                                    │
+│── Build ───────────││5 · · · · · ▀                             ││           ⢇⡀   15  ⣀⠇⠊⠁  ⡇               ││5   ⣀⢄       6  ⢀⡠⢄⡀                │
+│  at 3.1 site 5     ││6 · · · · ▀ ·                             ││           ⡇⠈⠑⠤⣀⣇⡠⠔⠉ ⡇ 5  ⡇               ││  ⠐⠫⢄⣀⠭⠂⠤⣀      ⠑⠢⡠⠜⠁               │
+│  closes 1 bond     ││                                          ││           ⡇ 2  ⠁ 4  ⡇ ⣀⠤⠒⠁               ││  ⠸⣀ ⡇⢀⠇⠊⠁      ⠓⠤⣠⠔⠢⢄⡀             │
+│↑↓←→  site          ││                                          ││           ⠣⢄⡀  ⡇  ⣀⠤⠃⠉                   ││  ⢸ ⠉⠋⠁⡇⠤⠚      ⠣⢄⡏⠉⠒⠉⡇             │
+│, .   step          ││                                          ││             ⠈⠒⠤⡧⠔⠊                       ││────────────      ⠉⠒⠧⠒⠁             │
+│r / R turn          ││                                          ││                                          ││                                    │
+│enter attach        ││                                          ││                                          ││7     ⣀⢄⡀    8     ⣀⢄⡀              │
+│bksp  undo          ││                                          ││                                          ││  ⢀⡠⠔⠢⢄⡀⠬⠓     ⢀⡠⠔⠚⠤⣀⠬⠓             │
+│- = 0 zoom/fit      ││                                          ││   z                                      ││  ⢸⠉⠒⠔⠊⡇⢀⡸     ⢸⠉⠒⢇⡀⡇⢀⡸             │
+│1-9   species       ││                                          ││  ⢀⣇                                      ││  ⠘⠢⢄⣇⠤⠃⠁⢸     ⠘⠢⢄⡇⠈⠋⠁⢸             │
+│n / w new/next      ││                                          ││ x⠁ ⠉y                                    ││     ⠈⠑⠗⠊⠁        ⠈⠑⠗⠊⠁             │
+│c     clear/close   ││                                          ││                                          ││                                    │
 ╰────────────────────╯╰──────────────────────────────────────────╯╰──────────────────────────────────────────╯╰────────────────────────────────────╯
                                                                                                                         1 species  2 bonds  3 placed
 ```

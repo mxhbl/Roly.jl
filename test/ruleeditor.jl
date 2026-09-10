@@ -29,8 +29,8 @@ end
 # Bearing of each free site about the structure's centroid, which is the order the anchor
 # cycles in.
 function _bearings(m)
-    sites = RE.absolutesites(m.placements, m.species)
-    c = sum(pose.x for (_, pose) in m.placements) / length(m.placements)
+    sites = RE.absolutesites(RE.placements(m), m.species)
+    c = sum(pose.x for (_, pose) in RE.placements(m)) / length(RE.placements(m))
     return [(d=sites[i][k].pose.x - c; atan(d[2], d[1])) for (i, k) in m.free]
 end
 
@@ -65,12 +65,32 @@ function _fills(buf, rect)
     return seen
 end
 
+# Attach at whichever free site the cursor is on. In 3D the free list holds only the sites the
+# camera shows, so naming one by index does not carry across viewpoints.
+function _attachhere!(m, incoming)
+    m.focus = :construction
+    m.incoming = incoming
+    RE.update!(m, Tachikoma.KeyEvent(:enter))
+    return m
+end
+
 # The characters covering a region, which is what a braille drawing puts there.
 function _chars(buf, rect)
     return [
         buf.content[Tachikoma.buf_index(buf, x, y)].char for
         x in rect.x:(rect.x + rect.width - 1), y in rect.y:(rect.y + rect.height - 1)
     ]
+end
+
+# Cells holding one of the axis indicator's letters, which it draws bold. The sidebar's own text
+# has letters in it too, so the style is what tells them apart.
+function _axisletters(tb)
+    n = 0
+    for x in 1:tb.width, y in 1:tb.height
+        cell = tb.buf.content[Tachikoma.buf_index(tb.buf, x, y)]
+        n += (cell.char in ('x', 'y', 'z') && cell.style.bold)
+    end
+    return n
 end
 
 # How squarely the site the cursor is on faces the camera. Negative means it is on the far side.
@@ -84,29 +104,29 @@ end
 
     # A fresh model holds one particle, every site of it free, and no rule yet.
     m = RE.EditorModel(UnitSquare)
-    @test length(m.placements) == 1
+    @test length(RE.placements(m)) == 1
     @test length(m.free) == nsites(UnitSquare)
     @test nbonds(m.rules) == 0
     @test RE.ntwists(m) == 1  # a 2D bond fixes the partner's orientation outright
 
     # An attachment bonds the anchor's color to the incoming site's color, and consumes both.
     _attach!(m, 1, 2, 4)
-    @test RE.inferred_bonds(m.placements, m.species) == [(2, 4)]
+    @test RE.inferred_bonds(RE.placements(m), m.species) == [(2, 4)]
     @test length(m.free) == 2 * nsites(UnitSquare) - 2
-    @test RE.bonds_matrix(m.placements, m.species) == [1 2 1 4]
+    @test RE.bonds_matrix(RE.placements(m), m.species) == [1 2 1 4]
     @test !isnothing(m.rules)
 
     m = RE.EditorModel(UnitSquare)
     _attach!(m, 1, 1, 3)
-    @test RE.inferred_bonds(m.placements, m.species) == [(1, 3)]
+    @test RE.inferred_bonds(RE.placements(m), m.species) == [(1, 3)]
 
     m = RE.EditorModel(UnitTriangle)
     _attach!(m, 1, 3, 3)
-    @test RE.inferred_bonds(m.placements, m.species) == [(3, 3)]
+    @test RE.inferred_bonds(RE.placements(m), m.species) == [(3, 3)]
 
     m = RE.EditorModel(UnitHexagon)
     _attach!(m, 1, 3, 6)
-    @test RE.inferred_bonds(m.placements, m.species) == [(3, 6)]
+    @test RE.inferred_bonds(RE.placements(m), m.species) == [(3, 6)]
 
     # Rules are read off every pair of particles, not just the pairs that were attached. Here
     # the fourth square closes a 2x2 block: it bonds (1, 2) to the particle it was attached to,
@@ -114,24 +134,24 @@ end
     m = RE.EditorModel(UnitSquare)
     _attach!(m, 1, 1, 3)
     _attach!(m, 1, 2, 4)
-    @test RE.inferred_bonds(m.placements, m.species) == [(1, 3), (2, 4)]
+    @test RE.inferred_bonds(RE.placements(m), m.species) == [(1, 3), (2, 4)]
     _attach!(m, 2, 2, 1)
-    @test RE.inferred_bonds(m.placements, m.species) == [(1, 2), (1, 3), (1, 4), (2, 4)]
-    @test size(RE.bonds_matrix(m.placements, m.species), 1) == 4
+    @test RE.inferred_bonds(RE.placements(m), m.species) == [(1, 2), (1, 3), (1, 4), (2, 4)]
+    @test size(RE.bonds_matrix(RE.placements(m), m.species), 1) == 4
 
     # An empty grid yields nothing to infer.
     m = RE.EditorModel(UnitSquare)
-    @test isempty(RE.inferred_bonds(m.placements, m.species))
-    @test size(RE.bonds_matrix(m.placements, m.species)) == (0, 4)
-    @test isnothing(RE.buildrules(m.placements, m.species))
+    @test isempty(RE.inferred_bonds(RE.placements(m), m.species))
+    @test size(RE.bonds_matrix(RE.placements(m), m.species)) == (0, 4)
+    @test isnothing(RE.buildrules(RE.placements(m), m.species))
 
     # A pentagon chain curls back on itself, and the attachment that would overlap is refused.
     m = RE.EditorModel(UnitNgon(5))
     _attach!(m, 1, 4, 5)
     _attach!(m, 2, 4, 5)
-    @test length(m.placements) == 3
+    @test length(RE.placements(m)) == 3
     _attach!(m, 3, 4, 5)
-    @test length(m.placements) == 3
+    @test length(RE.placements(m)) == 3
     @test startswith(m.message, "overlaps")
 
     # `.` walks the perimeter in order and reaches every free site; `,` goes back.
@@ -173,7 +193,7 @@ end
     _attach!(m, 1, 1, 3)
     _attach!(m, 1, 2, 4)
     _attach!(m, 2, 2, 1)
-    _sitepos(n) = RE.absolutesites(m.placements, m.species)[m.free[n][1]][m.free[n][2]].pose.x
+    _sitepos(n) = RE.absolutesites(RE.placements(m), m.species)[m.free[n][1]][m.free[n][2]].pose.x
     _cos(from, to, d) = (v=_sitepos(to) - _sitepos(from); (v[1] * d[1] + v[2] * d[2]) / hypot(v...))
     n = length(m.free)
     for start in 1:n, dir in (:up, :down, :left, :right)
@@ -210,7 +230,8 @@ end
     m = RE.EditorModel(UnitSquare)
     m.showconstruction = true
     _attach!(m, 1, 1, 3)
-    @test RE.contacts(m.placements, m.species) == [(RE.absolutesites(m.placements, m.species)[1][1].pose.x, 1, 1, 1, 3)]
+    @test RE.contacts(RE.placements(m), m.species) ==
+        [(RE.absolutesites(RE.placements(m), m.species)[1][1].pose.x, 1, 1, 1, 3)]
     @test !isnothing(Tachikoma.find_text(_render(m), "13"))
 
     # Colors are the ones the rules assign, so each species gets its own range rather than every
@@ -223,9 +244,9 @@ end
     gc = RE.sitecolors(m)
     @test [gc[(1, k)] for k in 1:4] == 1:4
     @test [gc[(2, k)] for k in 1:4] == 5:8
-    @test ncolors(RE.buildrules(m.placements, m.species)) == 8
+    @test ncolors(RE.buildrules(RE.placements(m), m.species)) == 8
     # The bond between species 1 site 2 and species 2 site 4 is (2, 8), and reads that way.
-    @test (2, 8) in RE.bonded_colors(RE.buildrules(m.placements, m.species))
+    @test (2, 8) in RE.bonded_colors(RE.buildrules(RE.placements(m), m.species))
     @test !isnothing(Tachikoma.find_text(_render(m), "28"))
 
     # The pending bond is labelled the same way, anchor colour then the ghost site meeting it.
@@ -255,25 +276,73 @@ end
     m = RE.EditorModel(UnitSquare)
     _attach!(m, 1, 1, 3)
     RE.update!(m, Tachikoma.KeyEvent(:backspace))
-    @test length(m.placements) == 1
+    @test length(RE.placements(m)) == 1
     RE.update!(m, Tachikoma.KeyEvent(:backspace))
-    @test length(m.placements) == 1
+    @test length(RE.placements(m)) == 1
 
-    # `c` clears back to a single particle, `n` seeds a disconnected one.
+    # `n` opens another construction window, `w` cycles between them, and the rules are read off
+    # all of them at once, so an arrangement can be kept while the next is built beside it.
     m = RE.EditorModel(UnitSquare)
+    m.focus = :construction
+    _attach!(m, 1, 1, 3)
+    @test length(m.windows) == 1
+    @test interactionmatrix(m.rules)[1, 3]
+    RE.update!(m, Tachikoma.KeyEvent('n'))
+    @test length(m.windows) == 2
+    @test m.window == 2
+    @test length(RE.placements(m)) == 1              # the new window starts empty
+    @test interactionmatrix(m.rules)[1, 3]           # the first window's bond stands
+    _attach!(m, 1, 2, 4)
+    @test interactionmatrix(m.rules)[1, 3]           # and both windows contribute
+    @test interactionmatrix(m.rules)[2, 4]
+    RE.update!(m, Tachikoma.KeyEvent('w'))
+    @test m.window == 1
+    @test length(RE.placements(m)) == 2              # back to the first arrangement
+    RE.update!(m, Tachikoma.KeyEvent('W'))
+    @test m.window == 2
+
+    # Clearing a window takes with it the bonds only that window produced, and leaves the rest.
+    RE.update!(m, Tachikoma.KeyEvent('c'))
+    @test length(RE.placements(m)) == 1
+    @test interactionmatrix(m.rules)[1, 3]           # still the first window's
+    @test !interactionmatrix(m.rules)[2, 4]          # this window's is gone with it
+    # Clearing an already-clear window closes it, so the cycle does not fill up with empties.
+    RE.update!(m, Tachikoma.KeyEvent('c'))
+    @test length(m.windows) == 1
+    @test m.window == 1
+    @test interactionmatrix(m.rules)[1, 3]
+    # The last window is cleared rather than closed, there always being one to build in.
+    RE.update!(m, Tachikoma.KeyEvent('c'))
+    RE.update!(m, Tachikoma.KeyEvent('c'))
+    @test length(m.windows) == 1
+    @test nbonds(m.rules) == 0
+
+    # A bond two windows both produce survives either of them being cleared.
+    m = RE.EditorModel(UnitSquare)
+    m.focus = :construction
     _attach!(m, 1, 1, 3)
     RE.update!(m, Tachikoma.KeyEvent('n'))
-    @test length(m.placements) == 3
-    @test isempty(RE.inferred_bonds(m.placements, m.species)) == false  # the bonded pair remains
+    _attach!(m, 1, 1, 3)
+    @test interactionmatrix(m.rules)[1, 3]
     RE.update!(m, Tachikoma.KeyEvent('c'))
-    @test length(m.placements) == 1
+    @test interactionmatrix(m.rules)[1, 3]
+
+    # A bond set by hand is not the geometry's to take away.
+    m = RE.EditorModel(UnitSquare)
+    m.focus = :construction
+    _attach!(m, 1, 1, 3)
+    m.pair = (1, 3)
+    RE.togglebond!(m, m.pair)                        # off
+    RE.togglebond!(m, m.pair)                        # and on again, now by hand
+    RE.update!(m, Tachikoma.KeyEvent('c'))
+    @test interactionmatrix(m.rules)[1, 3]
 
     # Two species: the returned rules keep both, renumbered from one.
     m = RE.EditorModel(UnitSquare)
     m.focus = :construction
     RE.update!(m, Tachikoma.KeyEvent('2'))
     _attach!(m, 1, 1, 3)
-    rules = RE.buildrules(m.placements, m.species)
+    rules = RE.buildrules(RE.placements(m), m.species)
     @test nspecies(rules) == 2
 
     # `q` and escape accept; nothing else does.
@@ -290,7 +359,7 @@ end
     m = RE.EditorModel(UnitSquare)
     _attach!(m, 1, 1, 3)
     _attach!(m, 1, 2, 4)
-    rules = RE.buildrules(m.placements, m.species)
+    rules = RE.buildrules(RE.placements(m), m.species)
     @test rules isa BindingRules
     @test polyenum(rules; maxsize=3, maxstrs=100).nstructures > 0
 
@@ -474,16 +543,16 @@ end
     RE.drawheading!(small, vsmall, one(Roly.posetype(UnitSquare)), UnitSquare, pts)
     @test all(iszero, small.dots)
 
-    # Clearing the construction keeps the rules it produced, so an arrangement can be built to
-    # discover a bond and then cleared away.
+    # Clearing the only window empties the rules with it, the geometry being all that produced
+    # them; keeping an arrangement means giving the next one a window of its own.
     m = RE.EditorModel(UnitSquare)
     m.showconstruction = true
     _attach!(m, 1, 1, 3)
     @test interactionmatrix(m.rules)[1, 3]
     RE.update!(m, Tachikoma.KeyEvent('c'))
-    @test length(m.placements) == 1
-    @test isempty(RE.inferred_bonds(m.placements, m.species))  # the drawing really is empty
-    @test interactionmatrix(m.rules)[1, 3]                     # the rule is not
+    @test length(RE.placements(m)) == 1
+    @test isempty(RE.inferred_bonds(RE.placements(m), m.species))
+    @test nbonds(m.rules) == 0
 
     # A placement can meet several particles at once, and every bond it would make is reported
     # before it is committed, not only the one aimed at.
@@ -499,9 +568,9 @@ end
     @test (3, 1) in [(i, k) for (_, i, k, _) in pending]
 
     # Committing it really does make both.
-    before = length(RE.inferred_bonds(m.placements, m.species))
+    before = length(RE.inferred_bonds(RE.placements(m), m.species))
     RE.update!(m, Tachikoma.KeyEvent(:enter))
-    @test length(RE.inferred_bonds(m.placements, m.species)) == before + 2
+    @test length(RE.inferred_bonds(RE.placements(m), m.species)) == before + 2
 
     # A placement that would overlap is refused, and looks refused before enter is pressed: the
     # ghost is drawn in the error color and the sidebar names what is in the way.
@@ -514,7 +583,7 @@ end
     @test RE.blockedby(m, RE.previewpose(m)) == 2
     @test !isnothing(Tachikoma.find_text(_render(m), "blocked by 2"))
     RE.update!(m, Tachikoma.KeyEvent(:enter))
-    @test length(m.placements) == 2               # refused
+    @test length(RE.placements(m)) == 2               # refused
     @test m.message == "overlaps particle 2"
     @test m.messagekind === :warning
 
@@ -539,7 +608,7 @@ end
     m.incoming = 2
     @test isnothing(RE.blockedby(m, RE.previewpose(m)))
     RE.update!(m, Tachikoma.KeyEvent(:enter))
-    @test length(m.placements) == 3
+    @test length(RE.placements(m)) == 3
 
     # Species are added and dropped from the rules pane, which is where they matter when there
     # is no construction to place them in.
@@ -645,7 +714,7 @@ end
     m.showconstruction = true
     @test length(m.free) == nsites(disk)
     _attach!(m, 1, 1, 2)
-    @test RE.inferred_bonds(m.placements, m.species) == [(1, 2)]
+    @test RE.inferred_bonds(RE.placements(m), m.species) == [(1, 2)]
     _enumerate!(m)
     @test !isempty(m.polyforms)
     tb = _render(m)
@@ -658,8 +727,8 @@ end
     # Species created from the rules pane appear in the gallery, not only placed ones.
     m = RE.EditorModel(UnitSquare)
     RE.update!(m, Tachikoma.KeyEvent('a'))
-    @test isempty(RE.usedspecies(m.placements)) == false
-    @test RE.usedspecies(m.placements) == [1]   # species 2 has never been placed
+    @test isempty(RE.usedspecies(RE.placements(m))) == false
+    @test RE.usedspecies(RE.placements(m)) == [1]   # species 2 has never been placed
     tb = _render(m)
     @test !isnothing(Tachikoma.find_text(tb, "species 1"))
     @test !isnothing(Tachikoma.find_text(tb, "species 2"))
@@ -691,7 +760,7 @@ end
 
     # A chain long enough to leave the view zooms out, and never zooms back in on its own.
     for _ in 1:12
-        _attach!(m, length(m.placements), 1, 3)
+        _attach!(m, length(RE.placements(m)), 1, 3)
         _render(m)
     end
     @test m.scale < scale0
@@ -769,10 +838,10 @@ end
 
     # Gallery scaling: the width is filled first, so species are laid out across rather than in
     # one tall column, and the rows take what height is left.
-    @test RE.gallerylayout(2, 38, 14) == (2, 1, RE.GALLERY_ROW)
-    @test RE.gallerylayout(6, 38, 21)[1] == 3
-    @test isnothing(RE.gallerylayout(6, 38, 4))   # rows too short to read
-    @test isnothing(RE.gallerylayout(1, 8, 20))   # too narrow for any drawing
+    @test RE.gallerylayout(2, 4, 38, 14) == (2, 1, RE.GALLERY_ROW)
+    @test RE.gallerylayout(6, 4, 38, 21)[1] == 3
+    @test isnothing(RE.gallerylayout(6, 4, 38, 4))   # rows too short to read
+    @test isnothing(RE.gallerylayout(1, 4, 8, 20))   # too narrow for any drawing
 
     # When it declines, a one-line-per-species summary takes over, which the gallery never
     # draws, so finding it means the fallback ran. It uses columns too.
@@ -805,7 +874,7 @@ end
     m.showconstruction = true
     @test length(m.free) == nsites(disk)
     _attach!(m, 1, 1, 2)
-    @test RE.inferred_bonds(m.placements, m.species) == [(1, 2)]
+    @test RE.inferred_bonds(RE.placements(m), m.species) == [(1, 2)]
     _enumerate!(m)
     @test !isempty(m.polyforms)
     tb = _render(m)
@@ -818,8 +887,8 @@ end
     # Species created from the rules pane appear in the gallery, not only placed ones.
     m = RE.EditorModel(UnitSquare)
     RE.update!(m, Tachikoma.KeyEvent('a'))
-    @test isempty(RE.usedspecies(m.placements)) == false
-    @test RE.usedspecies(m.placements) == [1]   # species 2 has never been placed
+    @test isempty(RE.usedspecies(RE.placements(m))) == false
+    @test RE.usedspecies(RE.placements(m)) == [1]   # species 2 has never been placed
     tb = _render(m)
     @test !isnothing(Tachikoma.find_text(tb, "species 1"))
     @test !isnothing(Tachikoma.find_text(tb, "species 2"))
@@ -851,7 +920,7 @@ end
 
     # A chain long enough to leave the view zooms out, and never zooms back in on its own.
     for _ in 1:12
-        _attach!(m, length(m.placements), 1, 3)
+        _attach!(m, length(RE.placements(m)), 1, 3)
         _render(m)
     end
     @test m.scale < scale0
@@ -939,6 +1008,10 @@ end
     @test norm(cam.right) ≈ 1
     @test norm(cam.up) ≈ 1
     @test dot(cam.up, SVector(0.0, 0.0, 1.0)) > 0
+    # Right-handed, so a right-handed world frame stays right-handed on screen: from (1, 1, 1)
+    # the x, y and z axes run counterclockwise, not clockwise.
+    @test cross(cam.right, cam.up) ≈ cam.view
+    @test all(c -> cross(c.right, c.up) ≈ c.view, RE.VIEWPOINTS)
 
     # A 2D point is already in the projection plane, so the camera leaves it alone and every 2D
     # drawing is unchanged by the projection being there at all.
@@ -955,23 +1028,20 @@ end
     @test RE.plane(turned, SVector(1.0, 0.0, 0.0)) != RE.plane(cam, SVector(1.0, 0.0, 0.0))
     @test abs(dot(turned.view, turned.right)) < 1e-12
 
-    # A convex particle shows half its faces, one per shade, and the three shades stay distinct
-    # after quantization to the 256-color cube.
+    # A convex particle shows half its faces, and the faces it shows are the ones whose outward
+    # normal points at the camera.
     pose = one(Roly.posetype(UnitCube))
     faces = RE.visiblefaces(UnitCube, pose, cam)
     @test length(faces) == 3
     @test all(length(first(f)) == 4 for f in faces)
-    @test sort(last.(faces)) == [1, 2, 3]
-    ramp = RE.faceramp(RE.speciesrgb(1))
-    @test length(unique(c.code for c in ramp)) == 3
-    @test all(length(unique(c.code for c in RE.faceramp(RE.speciesrgb(i)))) == 3 for i in 1:8)
+    @test sort(last.(faces)) == [1, 2, 3]  # one per shade
 
     # A 3D species with no polyhedron behind it falls back to the silhouette of its bounding
     # sphere, the way a 2D one falls back to a circle.
-    sphere = PatchySphere(Roly.Cube(), 0.9)
+    sphere = PatchySphere(Cube(), 0.9)
     fallback = RE.visiblefaces(sphere, one(Roly.posetype(sphere)), cam)
     @test length(fallback) == 1
-    @test length(first(fallback[1])) == 24
+    @test length(fallback[1][1]) == 24
 
     # Exactly the sites on the near half are drawn, in 3D. In 2D nothing is ever hidden.
     @test count(k -> RE.facing(cam, Roly.bindingsite(UnitCube, k)), 1:nsites(UnitCube)) == 3
@@ -982,8 +1052,8 @@ end
     @test RE.interiorbonds(UnitSquare)
     @test !RE.interiorbonds(UnitCube)
 
-    # The scanline fill paints the cells whose centers fall inside the polygon, and nothing for a
-    # polygon with no interior.
+    # The scanline fill paints the grid points inside the polygon, and nothing for a polygon with
+    # no interior.
     painted = Tuple{Int,Int}[]
     RE.fillpolygon!((x, y) -> push!(painted, (x, y)), [(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0)])
     @test length(painted) == 16
@@ -992,47 +1062,50 @@ end
     RE.fillpolygon!((x, y) -> push!(painted, (x, y)), [(0.0, 0.0), (4.0, 4.0)])
     @test isempty(painted)
 
-    # The editor opens on the canonical viewpoint, with the cursor already on a site it shows.
+    # The eight viewpoints are all the same isometric view, one per octant, and between them
+    # they show every face of a convex particle.
+    @test length(RE.VIEWPOINTS) == 8
+    @test all(c -> all(≈(1 / sqrt(3)), abs.(c.view)), RE.VIEWPOINTS)
+    @test length(unique(sign.(c.view) for c in RE.VIEWPOINTS)) == 8
+    @test all(k -> any(c -> RE.facing(c, Roly.bindingsite(UnitCube, k)), RE.VIEWPOINTS), 1:nsites(UnitCube))
+    # Consecutive viewpoints differ by a quarter turn or a flip, never both, so stepping the
+    # camera never jumps to the far side of the structure.
+    @test all(n -> dot(RE.VIEWPOINTS[n].view, RE.VIEWPOINTS[mod1(n + 1, 8)].view) ≈ 1 / 3, eachindex(RE.VIEWPOINTS))
+
+    # The editor opens on the first of them, with the cursor already on a site it shows.
     m = RE.EditorModel(UnitCube)
-    @test m.azimuth ≈ RE.ISO_AZIMUTH
-    @test m.elevation ≈ RE.ISO_ELEVATION
+    @test m.viewpoint == 1
+    @test RE.camera(m) === RE.ISOCAM
     @test _anchorfacing(m) > 0
-    @test length(m.placements) == 1
-    @test length(m.free) == nsites(UnitCube)
+    @test length(RE.placements(m)) == 1
+    # Only the sites the camera shows are offered, which for a convex particle is half of them.
+    @test length(m.free) == nsites(UnitCube) ÷ 2
 
     # Attaching reads the bond off the geometry, exactly as in 2D.
     m.focus = :construction
-    _attach!(m, 1, 1, 2)
-    @test length(m.placements) == 2
-    @test RE.inferred_bonds(m.placements, m.species) == [(1, 2)]
+    _attachhere!(m, 2)
+    @test length(RE.placements(m)) == 2
+    @test length(RE.inferred_bonds(RE.placements(m), m.species)) == 1
     @test nbonds(m.rules) == 1
 
-    # Stepping the cursor onto a face on the far side swings the camera until that face is
-    # square enough to the viewer to read, and no further.
+    # The camera never moves on its own: the sites offered to attach to are the ones it shows,
+    # so the cursor stays on the near side and the view stays where the user put it.
     m = RE.EditorModel(UnitCube)
     m.focus = :construction
-    hidden = findfirst(
-        n -> begin
-            i, k = m.free[n]
-            !RE.facing(RE.camera(m), RE.absolutesites(m.placements, m.species)[i][k])
-        end, eachindex(m.free)
-    )
-    @test hidden !== nothing
-    m.anchor = hidden
-    @test _anchorfacing(m) <= 0
-    RE.pivot!(m)
-    @test _anchorfacing(m) ≈ RE.SITE_MARGIN
-    @test abs(m.elevation) <= RE.MAX_ELEVATION
+    @test all(((i, k),) -> RE.facing(RE.camera(m), RE.absolutesites(RE.placements(m), m.species)[i][k]), m.free)
+    was = m.viewpoint
+    for key in (:up, :down, :left, :right, ',', '.')
+        for _ in 1:6
+            RE.update!(m, Tachikoma.KeyEvent(key))
+            @test m.viewpoint == was
+            @test _anchorfacing(m) > 0
+        end
+    end
 
-    # A site already facing the camera leaves it where it is.
-    was = (m.azimuth, m.elevation)
-    RE.pivot!(m)
-    @test (m.azimuth, m.elevation) == was
-
-    # Walking the cursor never leaves it on a face the viewer cannot see.
+    # Walking the cursor of a grown structure stays on the near side too.
     m = RE.EditorModel(UnitCube)
     m.focus = :construction
-    _attach!(m, 1, 1, 2)
+    _attachhere!(m, 2)
     for _ in 1:12
         RE.update!(m, Tachikoma.KeyEvent(:right))
         @test _anchorfacing(m) > 0
@@ -1044,85 +1117,93 @@ end
         end
     end
 
-    # Turning the camera reorders the perimeter the arrow keys walk, but leaves the cursor on
-    # the site it was on.
-    site = m.free[m.anchor]
-    RE.turn!(m, RE.TURN_STEP, 0.0)
-    @test m.free[m.anchor] == site
-    @test issetequal(m.free, RE.freesites(m.placements, m.species, RE.camera(m)))
+    # Turning the camera offers the sites the new viewpoint shows, and every site of the
+    # structure is reachable across the eight of them.
+    reachable = Set{Tuple{Int,Int}}()
+    for n in 1:length(RE.VIEWPOINTS)
+        RE.lookfrom!(m, n)
+        union!(reachable, m.free)
+        @test all(((i, k),) -> RE.facing(RE.camera(m), RE.absolutesites(RE.placements(m), m.species)[i][k]), m.free)
+    end
+    RE.lookfrom!(m, 1)
+    @test length(reachable) == 2 * nsites(UnitCube) - 2  # every free site of the two cubes
 
-    # The camera keys turn and tilt it, and the tilt is held clear of the poles where the
-    # projection would degenerate.
+    # The cursor comes with the camera, landing on whichever offered site is nearest to where it
+    # was rather than on whatever now holds the old index.
+    before = RE.anchorsite(m).pose.x
+    RE.turn!(m, 1)
+    @test issetequal(m.free, RE.freesites(RE.placements(m), m.species, RE.camera(m)))
+    moved = sqrt(sum(abs2, RE.anchorsite(m).pose.x - before))
+    @test moved <= 2 * Roly.bounding_radius(UnitCube)
+
+    # The two camera keys step along the list and wrap round it, from any pane.
     m = RE.EditorModel(UnitCube)
-    m.focus = :construction
-    az = m.azimuth
-    RE.update!(m, Tachikoma.KeyEvent(']'))
-    @test m.azimuth ≈ az + RE.TURN_STEP
-    RE.update!(m, Tachikoma.KeyEvent('['))
-    @test m.azimuth ≈ az
-    for _ in 1:40
-        RE.update!(m, Tachikoma.KeyEvent('}'))
+    for pane in (:rules, :construction, :enumeration)
+        m.focus = pane
+        m.viewpoint = 1
+        RE.update!(m, Tachikoma.KeyEvent(']'))
+        @test m.viewpoint == 2
+        RE.update!(m, Tachikoma.KeyEvent('['))
+        @test m.viewpoint == 1
+        RE.update!(m, Tachikoma.KeyEvent('['))
+        @test m.viewpoint == length(RE.VIEWPOINTS)
     end
-    @test m.elevation ≈ RE.MAX_ELEVATION
-    for _ in 1:80
-        RE.update!(m, Tachikoma.KeyEvent('{'))
+    m.viewpoint = 1
+    for _ in 1:length(RE.VIEWPOINTS)
+        RE.update!(m, Tachikoma.KeyEvent(']'))
     end
-    @test m.elevation ≈ -RE.MAX_ELEVATION
+    @test m.viewpoint == 1
 
-    # Turning is a 2D no-op, there being nothing to turn.
+    # Turning is a 2D no-op, there being nothing to turn, and 2D offers every free site.
     flat = RE.EditorModel(UnitSquare)
-    RE.turn!(flat, RE.TURN_STEP, RE.TURN_STEP)
-    @test flat.azimuth == RE.ISO_AZIMUTH
-    @test flat.elevation == RE.ISO_ELEVATION
-    RE.pivot!(flat)
-    @test flat.azimuth == RE.ISO_AZIMUTH
+    RE.turn!(flat, 3)
+    @test flat.viewpoint == 1
+    @test length(flat.free) == nsites(UnitSquare)
 
     # `c` clears the drawing and puts the camera back where it opened.
     m = RE.EditorModel(UnitCube)
     m.focus = :construction
-    _attach!(m, 1, 1, 2)
-    RE.turn!(m, 1.0, 0.2)
+    _attachhere!(m, 2)
+    RE.turn!(m, 3)
     RE.update!(m, Tachikoma.KeyEvent('c'))
-    @test length(m.placements) == 1
-    @test m.azimuth ≈ RE.ISO_AZIMUTH
-    @test m.elevation ≈ RE.ISO_ELEVATION
+    @test length(RE.placements(m)) == 1
+    @test m.viewpoint == 1
 
     # The camera fits the projection of the structure, not its world coordinates: a bond along
     # the view axis still takes room on screen.
     m = RE.EditorModel(UnitCube)
-    box = RE.worldbox(m.placements, m.species, cam)
+    box = RE.worldbox(RE.placements(m), m.species, cam)
     r = Roly.bounding_radius(UnitCube)
     @test box[1] ≈ -r && box[2] ≈ r && box[3] ≈ -r && box[4] ≈ r
 
-    # A 3D scene is drawn as filled cells, in three shades of each species' hue, inside the pane
-    # it was given and nowhere else.
+    # A face's edges take the shade its orientation gives it, the same three a filled drawing
+    # would use, so the wireframe still reads as a lit solid.
+    ramp = RE.faceramp(RE.speciesrgb(1))
+    @test length(unique(c.code for c in ramp)) == 3
+    @test all(length(unique(c.code for c in RE.faceramp(RE.speciesrgb(i)))) == 3 for i in 1:8)
+
+    # A 3D scene is drawn as braille, inside the pane it was given and nowhere else, with no
+    # cell filled: the drawing is dots, so it reads at four times the vertical resolution a fill
+    # would.
     buf = Tachikoma.Buffer(Tachikoma.Rect(1, 1, 60, 24))
     rect = Tachikoma.Rect(10, 5, 30, 12)
-    v = RE.fitworld(m.placements, m.species, rect.width, rect.height)
-    RE.drawparticles!(buf, rect, v, m.placements, m.species)
-    inside = _fills(buf, rect)
-    @test length(inside) == 3
-    @test sum(values(inside)) > 20
-    @test isempty(_fills(buf, Tachikoma.Rect(1, 1, 9, 24)))
-    @test isempty(_fills(buf, Tachikoma.Rect(41, 1, 20, 24)))
+    v = RE.fitworld(RE.placements(m), m.species, rect.width, rect.height)
+    RE.drawparticles!(buf, rect, v, RE.placements(m), m.species)
+    @test isempty(_fills(buf, rect))
+    @test count(!=(Tachikoma.EMPTY_CHAR), _chars(buf, rect)) > 5
+    @test all(==(Tachikoma.EMPTY_CHAR), _chars(buf, Tachikoma.Rect(1, 1, 9, 24)))
+    @test all(==(Tachikoma.EMPTY_CHAR), _chars(buf, Tachikoma.Rect(41, 1, 20, 24)))
 
-    # `wire` draws the same particle as braille instead, which fills no cell and so reads at four
-    # times the vertical resolution. That is what the construction pane and the small drawings use.
-    wired = Tachikoma.Buffer(Tachikoma.Rect(1, 1, 60, 24))
-    RE.drawparticles!(wired, rect, v, m.placements, m.species; wire=true)
-    @test isempty(_fills(wired, rect))
-    @test count(!=(Tachikoma.EMPTY_CHAR), _chars(wired, rect)) > 5
-
-    # A particle standing behind another is hidden by it, the wireframe being composited in depth
+    # A particle standing behind another is hidden by it, the drawing being composited in depth
     # order rather than every particle drawing through whatever stands in front of it.
     P = Roly.posetype(UnitCube)
     small = PatchySphere(Cube(), 0.4)  # small enough to sit inside the cube's silhouette
     front = one(P)
     fixed = RE.World(20.0, 0.0, 0.0, rect.width, rect.height, cam)
-    _wire(ps) = begin
+    function _wire(ps)
         b = Tachikoma.Buffer(Tachikoma.Rect(1, 1, 60, 24))
-        RE.drawparticles!(b, rect, fixed, ps, [UnitCube, small]; wire=true)
-        _chars(b, rect)
+        RE.drawparticles!(b, rect, fixed, ps, [UnitCube, small])
+        return _chars(b, rect)
     end
     alone = _wire([(1, front)])
     back = P(front.x - 3 * cam.view, front.psi)
@@ -1130,26 +1211,17 @@ end
     @test _wire([(1, front), (2, back)]) == alone
     @test _wire([(1, front), (2, P(front.x + 3 * cam.view, front.psi))]) != alone
 
-    # A refused placement is filled in a neutral gray and crossed out, rather than in a species
-    # hue that would read as a different species.
-    RE.crossout!(buf, rect, [(12.0, 6.0), (20.0, 12.0)])
-    @test any(
-        buf.content[Tachikoma.buf_index(buf, x, y)].char == '╳' for
-        x in rect.x:(rect.x + rect.width - 1), y in rect.y:(rect.y + rect.height - 1)
-    )
-
-    # The whole editor draws a 3D species, and the build pane offers the camera keys that only
-    # 3D has.
+    # The whole editor draws a 3D species, and the sidebar offers the camera keys that only 3D
+    # has, naming the viewpoint they step through.
     m = RE.EditorModel(UnitCube)
     m.showconstruction = true
     m.focus = :construction
-    _attach!(m, 1, 1, 2)
+    _attachhere!(m, 2)
     tb = _render(m)
     @test !isempty(Tachikoma.find_text(tb, "Construction"))
     @test !isempty(Tachikoma.find_text(tb, "2 particles"))
-    @test !isempty(Tachikoma.find_text(tb, "turn"))
-    @test !isempty(Tachikoma.find_text(tb, "tilt"))
-    @test isnothing(Tachikoma.find_text(_render(RE.EditorModel(UnitSquare)), "tilt"))
+    @test !isempty(Tachikoma.find_text(tb, "view 1/8"))
+    @test isnothing(Tachikoma.find_text(_render(RE.EditorModel(UnitSquare)), "view 1/8"))
 
     # The enumeration runs on 3D rules and draws the structures it finds.
     _enumerate!(m)
@@ -1170,4 +1242,97 @@ end
     @test m.manualzoom
     RE.update!(m, Tachikoma.KeyEvent('-'))
     @test m.scale ≈ s0
+
+    # The axis indicator says which way the camera is looking, and turns with it.
+    axesbuf = Tachikoma.Buffer(Tachikoma.Rect(1, 1, 60, 24))
+    axesrect = Tachikoma.Rect(5, 5, 20, 10)
+    RE.drawaxes!(axesbuf, axesrect, RE.ISOCAM)
+    letters = filter(c -> c in ('x', 'y', 'z'), vec(_chars(axesbuf, axesrect)))
+    @test sort(letters) == ['x', 'y', 'z']
+    # Too small a pane leaves it off rather than drawing over the structure.
+    tiny = Tachikoma.Buffer(Tachikoma.Rect(1, 1, 60, 24))
+    RE.drawaxes!(tiny, Tachikoma.Rect(5, 5, RE.AXES_W, RE.AXES_H), RE.ISOCAM)
+    @test all(==(Tachikoma.EMPTY_CHAR), _chars(tiny, Tachikoma.Rect(1, 1, 60, 24)))
+    # It appears in the construction pane and the inspector of a 3D editor, and in neither of a
+    # 2D one, where there is no orientation to report.
+    m = RE.EditorModel(UnitCube)
+    m.showconstruction = true
+    @test _axisletters(_render(m)) == 3
+    m.pair = (4, 5)
+    RE.togglebond!(m, m.pair)
+    _enumerate!(m)
+    @test !isempty(m.polyforms)
+    @test _axisletters(_render(m)) == 6  # the inspector carries one too
+    flat2 = RE.EditorModel(UnitSquare)
+    flat2.showconstruction = true
+    flat2.pair = (1, 3)
+    RE.togglebond!(flat2, flat2.pair)
+    _enumerate!(flat2)
+    @test !isempty(flat2.polyforms)
+    @test _axisletters(_render(flat2)) == 0
+
+    # Windows work the same in 3D: a second one keeps the first one's bonds on the books.
+    for sp in (UnitCube, UnitIcosahedron, UnitPrism(3))
+        m = RE.EditorModel(sp)
+        m.focus = :construction
+        _attachhere!(m, 2)
+        was = RE.effectivematrix(m)
+        @test any(was)
+        RE.update!(m, Tachikoma.KeyEvent('n'))
+        @test length(m.windows) == 2
+        @test length(RE.placements(m)) == 1
+        @test RE.effectivematrix(m) == was
+        RE.update!(m, Tachikoma.KeyEvent('c'))  # closes the empty window
+        @test length(m.windows) == 1
+        @test RE.effectivematrix(m) == was
+    end
+
+    # Color labels are one character while they can be, `1`-`9` then `a`-`z` then `A`-`Z`, and
+    # never repeat inside that range: two sites sharing a label would name different things the
+    # same way.
+    @test RE.labelwidth(1) == 1
+    @test RE.labelwidth(RE.NARROW_COLORS) == 1
+    @test RE.labelwidth(RE.NARROW_COLORS + 1) == 2
+    @test length(unique(RE.colorlabel(c) for c in 1:RE.NARROW_COLORS)) == RE.NARROW_COLORS
+    @test RE.colorlabel(9) == '9'
+    @test RE.colorlabel(10) == 'a'
+    @test RE.colorlabel(36) == 'A'
+    @test RE.colorlabel(RE.NARROW_COLORS) == 'Z'
+    # Past that they are two characters, in decimal, which reads without counting the alphabet.
+    @test RE.colorlabel(7, 2) == "07"
+    @test RE.colorlabel(62, 2) == "62"
+    @test length(unique(RE.colorlabel(c, 2) for c in 1:RE.MAX_COLORS)) == RE.MAX_COLORS
+
+    # A species is refused once its colors would run past what can be labelled, rather than the
+    # labels wrapping round.
+    big = RE.EditorModel(UnitIcosahedron)
+    while RE.roomforspecies(big)
+        n = length(big.species)
+        RE.update!(big, Tachikoma.KeyEvent('a'))
+        @test length(big.species) == n + 1
+    end
+    @test RE.totalcolors(big) + nsites(UnitIcosahedron) > RE.MAX_COLORS
+    n = length(big.species)
+    RE.update!(big, Tachikoma.KeyEvent('a'))
+    @test length(big.species) == n
+    @test occursin("no room", big.message)
+    big.focus = :construction
+    RE.update!(big, Tachikoma.KeyEvent('9'))  # a digit naming a species there is no room for
+    @test length(big.species) == n
+    @test occursin("no room", big.message)
+
+    # The label width follows the color count, and the matrix widens to match.
+    small = RE.EditorModel(UnitCube)
+    @test small.labelw == 1
+    wide = RE.EditorModel(UnitIcosahedron)
+    RE.update!(wide, Tachikoma.KeyEvent('a'))
+    RE.update!(wide, Tachikoma.KeyEvent('a'))
+    RE.update!(wide, Tachikoma.KeyEvent('a'))
+    @test RE.totalcolors(wide) > RE.NARROW_COLORS
+    @test wide.labelw == 2
+    @test RE.matrixwidth(wide) > RE.matrixwidth(small)
+    @test RE.matrixwidth(wide) == 3 * (ncolors(wide.rules) + 1)  # label plus separator per color
+    @test RE.label(wide, 62) == "62"
+    @test RE.label(small, 6) == "6"
+    @test !isnothing(_render(wide))  # and the whole editor still draws at that width
 end

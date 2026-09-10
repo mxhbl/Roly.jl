@@ -81,16 +81,46 @@ then reads as a blend of the two hues, and one within a species keeps that hue.
 """
 bondrgb(a::ColorRGB, b::ColorRGB) = color_lerp(a, b, 0.5)
 
-# Color indices are drawn as single characters so that a site label fits in one cell.
-colorlabel(c::Integer) = c <= 9 ? Char('0' + c) : Char('a' + mod(c - 10, 26))
+# How many colors one character can name, `1`-`9` then `a`-`z` then `A`-`Z`, and how many two
+# can. Two characters go back to plain decimal: reading `47` off a drawing takes no counting,
+# whereas working out where `T` falls in the alphabet does.
+const NARROW_COLORS = 61
+const MAX_COLORS = 99
+
+"""
+    labelwidth(n)
+
+Return how many characters a color index is written in when the rules span `n` colors: one while
+they fit the single-character alphabet, two beyond it.
+
+Site labels are written on the drawing itself, so a narrow label is worth keeping while it can
+name every color. [`MAX_COLORS`](@ref) is where two characters run out in turn, and the editor
+stops adding species there rather than naming two different sites the same thing.
+"""
+labelwidth(n::Integer) = n <= NARROW_COLORS ? 1 : 2
+
+"""
+    colorlabel(c)
+    colorlabel(c, w)
+
+Return the text a color index is drawn as, in `w` characters: `1`-`9`, then `a`-`z`, then `A`-`Z`
+for one, and the decimal index padded to two for two. The one-argument form gives the single
+character.
+"""
+function colorlabel(c::Integer)
+    c <= 9 && return Char('0' + c)
+    c <= 35 && return Char('a' + c - 10)
+    return Char('A' + min(c - 36, 25))
+end
+
+colorlabel(c::Integer, w::Integer) = w == 1 ? string(colorlabel(c)) : lpad(min(c, MAX_COLORS), 2, '0')
 
 ### Camera
 
-# The isometric viewpoint, looking down on the origin from the direction (1, 1, 1), and how far
-# the elevation may ever be driven from the horizon.
+# The isometric viewpoint looks at the origin from the direction (1, 1, 1): azimuth π/4 in the
+# world's xy plane, raised by atan(1/√2) above it.
 const ISO_AZIMUTH = π / 4
 const ISO_ELEVATION = atan(1 / sqrt(2))
-const MAX_ELEVATION = 85π / 180
 const WORLD_UP = SVector(0.0, 0.0, 1.0)
 
 """
@@ -100,6 +130,10 @@ Return the orthographic camera that looks at the origin from the direction given
 coordinates: `azimuth` measured in the world's xy plane from the x axis, `elevation` above that
 plane. `view` is the unit vector from the scene toward the camera, and `right` and `up` are the
 axes of the projection plane, pointing right and up on screen.
+
+`right`, `up` and `view` are right-handed, so a right-handed world frame stays right-handed on
+screen. Taking `right` the other way round would mirror the drawing, which reads as a plausible
+picture of the wrong structure rather than as an error.
 
 An orthographic projection preserves lengths perpendicular to the view, so a particle's bounding
 radius still bounds it on screen and the camera can be fitted with the same arithmetic in 2D and
@@ -114,11 +148,34 @@ end
 
 function Camera(azimuth::Real, elevation::Real)
     v = SVector(cos(elevation) * cos(azimuth), cos(elevation) * sin(azimuth), sin(elevation))
-    r = normalize(cross(v, WORLD_UP))
-    return Camera(v, r, cross(r, v))
+    r = normalize(cross(WORLD_UP, v))
+    return Camera(v, r, cross(v, r))
 end
 
-const ISOCAM = Camera(ISO_AZIMUTH, ISO_ELEVATION)
+"""
+    VIEWPOINTS
+
+The eight viewpoints the editor uses, one per octant: the isometric elevation above the horizon
+at each of four azimuths, then the same four seen from below.
+
+A fixed set rather than a free camera. Every one of them is the same isometric view, so a
+structure keeps its proportions whichever is chosen, and between them they show every face of a
+convex particle, a face of one being visible from four of the eight. Two keys stepping along the
+list are then the whole camera interface, and the list is ordered so that a step is either a
+quarter turn or a flip to the underside at the same azimuth, never both.
+"""
+const VIEWPOINTS = (
+    Camera(ISO_AZIMUTH, ISO_ELEVATION),
+    Camera(ISO_AZIMUTH + π / 2, ISO_ELEVATION),
+    Camera(ISO_AZIMUTH + π, ISO_ELEVATION),
+    Camera(ISO_AZIMUTH + 3π / 2, ISO_ELEVATION),
+    Camera(ISO_AZIMUTH + 3π / 2, -ISO_ELEVATION),
+    Camera(ISO_AZIMUTH + π, -ISO_ELEVATION),
+    Camera(ISO_AZIMUTH + π / 2, -ISO_ELEVATION),
+    Camera(ISO_AZIMUTH, -ISO_ELEVATION),
+)
+
+const ISOCAM = VIEWPOINTS[1]
 
 """
     plane(cam, p)
@@ -173,8 +230,19 @@ end
 """
     freesites(placements, species, cam)
 
-Return `(placement index, site index)` for every site that no other placement is touching,
-i.e. every site still available as an attachment anchor, ordered by [`sortfree`](@ref).
+Return `(placement index, site index)` for every site that is available as an attachment anchor:
+one that no other placement is touching and that the camera can see, ordered by
+[`sortfree`](@ref).
+
+Restricting the list to what is on screen is what keeps the camera still while a structure is
+being built. The cursor walks this list, so a cursor that could reach the far side would have to
+drag the camera round after it on almost every step, the projected perimeter of a 3D structure
+running through both sides at once. The camera is the user's instead, and the sites it shows are
+the ones the cursor offers. Every site is reachable, a face of a convex particle being visible
+from half the viewpoints.
+
+A structure whose free sites all point away is the exception, and then the whole list is
+returned rather than none of it, since there is still somewhere to attach.
 """
 function freesites(placements, species, cam::Camera)
     sites = absolutesites(placements, species)
@@ -190,7 +258,8 @@ function freesites(placements, species, cam::Camera)
         end
         taken || push!(free, (i, k))
     end
-    return sortfree(free, placements, species, cam)
+    shown = filter(((i, k),) -> facing(cam, sites[i][k]), free)
+    return sortfree(isempty(shown) ? free : shown, placements, species, cam)
 end
 
 """
@@ -372,20 +441,6 @@ end
 todots(v::World, p) = round.(Int, todotsf(v, p))
 
 """
-    tocells(v, rect, p)
-
-Return the position of a point in fractional cell coordinates within `rect`, where cell `(i, j)`
-covers `[i, i+1) x [j, j+1)`. Used by the filled 3D drawing, which paints whole cells rather
-than braille dots.
-"""
-function tocells(v::World, rect::Rect, p)
-    dx, dy = todotsf(v, p)
-    return (rect.x + dx / 2, rect.y + dy / 4)
-end
-
-inrect(r::Rect, col::Int, row::Int) = r.x <= col <= right(r) && r.y <= row <= bottom(r)
-
-"""
     worldbox(placements, species, cam)
 
 Return `(xmin, xmax, ymin, ymax)`, the extent the placements cover in the camera's projection
@@ -420,7 +475,7 @@ end
 
 Return the `World` that fits every placement into a `w` by `h` cell canvas. Used for the rules
 gallery and the enumeration preview, where each structure is drawn on its own and should fill
-the space it is given, from the fixed isometric viewpoint in 3D.
+the space it is given.
 """
 function fitworld(placements, species, w::Int, h::Int; cam::Camera=ISOCAM)
     (isempty(placements) || w < 1 || h < 1) && return World(4.0, 0.0, 0.0, max(w, 1), max(h, 1), cam)
@@ -504,16 +559,17 @@ function drawheading!(canvas::Canvas, v::World, pose::Pose, spcs, pts)
     return canvas
 end
 
-### Solid drawing
-
-# The gray a refused placement is filled in, and how far a pending one is faded toward the
-# background so that it reads as provisional without changing hue.
-const REJECT_GRAY = ColorRGB(0x78, 0x78, 0x80)
-const GHOST_FADE = 0.45
+### Hidden surfaces
 
 # Ramps are cached because finding the nearest entry of the 256-color cube searches all of it,
 # and every face of every particle asks for one on every frame.
 const RAMPS = Dict{ColorRGB,NTuple{3,Color256}}()
+
+# How far a pending particle is faded toward the background so that it reads as provisional
+# without changing hue, and the neutral gray a refused one takes: gray rather than red, red being
+# one of the species colors and a red ghost reading as a different species.
+const GHOST_FADE = 0.45
+const REJECT_GRAY = ColorRGB(0x78, 0x78, 0x80)
 
 """
     faceramp(base)
@@ -542,8 +598,8 @@ Return which of the three shades a face with outward normal `nrm` takes: the pal
 turned upward, and otherwise one of two, split by which side of the screen it looks toward.
 
 Three buckets rather than a continuous lighting term, which is both what the drawing style asks
-for and what survives quantization, a smooth ramp having put a cube's top and one of its sides
-on the same entry of the color cube.
+for and what survives quantization, a smooth ramp having put a cube's top and one of its sides on
+the same entry of the color cube.
 """
 function faceshade(cam::Camera, nrm)
     dot(nrm, WORLD_UP) > 0.5 && return 3
@@ -555,7 +611,7 @@ end
 
 Return the polygons of a particle's surface that face the camera, each paired with the index of
 the shade it is drawn in. Faces turned away are dropped, which for a convex body leaves exactly
-the silhouette and leaves nothing to sort among the faces that remain.
+the silhouette and the edges inside it that actually show.
 
 A 3D species with no polyhedron behind it is returned as the silhouette of its bounding sphere,
 in the same way the 2D drawing falls back to a circle.
@@ -574,18 +630,17 @@ end
 
 function visiblefaces(spcs::ParticleSpecies{3}, pose::Pose, cam::Camera)
     r = bounding_radius(spcs)
-    disk = [pose.x + r * (cos(2π * k / 24) * cam.right + sin(2π * k / 24) * cam.up) for k in 0:23]
-    return [(disk, 2)]
+    return [([pose.x + r * (cos(2π * k / 24) * cam.right + sin(2π * k / 24) * cam.up) for k in 0:23], 2)]
 end
 
 """
     fillpolygon!(paint, pts)
 
-Call `paint(column, row)` for every cell whose center falls inside the polygon `pts`, given in
-fractional cell coordinates.
+Call `paint(i, j)` for every grid point `(i, j)` that falls inside the polygon `pts`, where a
+point sits at the center of its own cell of the grid the coordinates are given in.
 
-A scanline fill: a horizontal line through the polygon crosses its edges an even number of
-times, so the spans between successive crossings are its interior.
+A scanline fill: a horizontal line through the polygon crosses its edges an even number of times,
+so the spans between successive crossings are its interior.
 """
 function fillpolygon!(paint, pts)
     n = length(pts)
@@ -610,55 +665,24 @@ function fillpolygon!(paint, pts)
 end
 
 """
-    crossout!(buf, rect, cells)
-
-Draw a cross over the extent a particle covers, marking a placement the editor will not accept.
-
-The 3D counterpart of [`drawreject!`](@ref). It writes characters over the fill rather than
-drawing into a canvas, a filled particle leaving no free braille dots to draw into.
-"""
-function crossout!(buf::Buffer, rect::Rect, cells)
-    isempty(cells) && return buf
-    x0, x1 = extrema(floor(Int, p[1]) for p in cells)
-    y0, y1 = extrema(floor(Int, p[2]) for p in cells)
-    steps = max(x1 - x0, y1 - y0, 1)
-    style = Style(; fg=rgb256(PALE), bold=true)
-    for t in 0:steps
-        f = t / steps
-        col = round(Int, x0 + f * (x1 - x0))
-        for row in (round(Int, y0 + f * (y1 - y0)), round(Int, y1 - f * (y1 - y0)))
-            inrect(rect, col, row) && set_char!(buf, col, row, '╳', style)
-        end
-    end
-    return buf
-end
-
-"""
-    drawparticles!(buf, rect, v, placements, species; ghost=nothing, blocked=false, wire=false)
+    drawparticles!(buf, rect, v, placements, species; ghost=nothing, blocked=false)
 
 Draw every placement into `rect`, followed by the pending particle when `ghost` is given as a
 `(species index, pose)` pair. `blocked` says that the pending particle is one the editor will
 refuse.
 
-2D particles are drawn as outlines on a braille canvas, one canvas per species so that each
-keeps its own color. 3D particles are drawn as filled faces shaded by their normal, far to near,
-so that a nearer particle covers what stands behind it.
-
-`wire` asks for the 3D drawing to be an outline instead, the edges of the faces that turn toward
-the camera, on the same braille canvas the 2D drawing uses. A filled face is a whole cell, four
-times the height and twice the width of a braille dot, so it needs a large pane to read; the
-small drawings, the rules gallery and the enumeration thumbnails, take the wireframe.
+2D particles are drawn as their outlines, 3D particles as the edges of the faces that turn toward
+the camera. Either way the drawing is braille dots on a `Canvas`, one canvas per species in 2D
+and one per particle in 3D, where the order they are drawn in decides what hides what.
 """
-function drawparticles!(
-    buf::Buffer, rect::Rect, v::World, placements, spcs; ghost=nothing, blocked::Bool=false, wire::Bool=false
-)
+function drawparticles!(buf::Buffer, rect::Rect, v::World, placements, spcs; ghost=nothing, blocked::Bool=false)
     (isempty(placements) && ghost === nothing) && return buf
     P = ghost === nothing ? typeof(placements[1][2]) : typeof(ghost[2])
-    return drawparticles!(Val(dimension(P)), buf, rect, v, placements, spcs; ghost, blocked, wire)
+    return drawparticles!(Val(dimension(P)), buf, rect, v, placements, spcs; ghost, blocked)
 end
 
 function drawparticles!(
-    ::Val{2}, buf::Buffer, rect::Rect, v::World, placements, spcs; ghost=nothing, blocked::Bool=false, wire::Bool=false
+    ::Val{2}, buf::Buffer, rect::Rect, v::World, placements, spcs; ghost=nothing, blocked::Bool=false
 )
     canvases = Dict{Int,Canvas}()
     for (i, pose) in placements
@@ -681,40 +705,8 @@ function drawparticles!(
     return buf
 end
 
-function drawparticles!(
-    ::Val{3}, buf::Buffer, rect::Rect, v::World, placements, spcs; ghost=nothing, blocked::Bool=false, wire::Bool=false
-)
-    wire && return drawwires!(buf, rect, v, placements, spcs; ghost, blocked)
-    idxs = [i for (i, _) in placements]
-    poses = [pose for (_, pose) in placements]
-    pending = falses(length(poses))
-    if ghost !== nothing
-        push!(idxs, ghost[1])
-        push!(poses, ghost[2])
-        push!(pending, true)
-    end
-    # Painter's algorithm: the farthest particle first. Within a convex particle the faces turned
-    # away are dropped outright, so those that survive never overlap and need no ordering.
-    for n in sortperm([dot(pose.x, v.cam.view) for pose in poses])
-        base = speciesrgb(idxs[n])
-        ramp = if !pending[n]
-            faceramp(base)
-        else
-            faceramp(blocked ? REJECT_GRAY : color_lerp(base, DEEP, GHOST_FADE))
-        end
-        seen = Tuple{Float64,Float64}[]
-        for (poly, shade) in visiblefaces(spcs[idxs[n]], poses[n], v.cam)
-            cells = [tocells(v, rect, p) for p in poly]
-            append!(seen, cells)
-            style = Style(; bg=ramp[shade])
-            fillpolygon!(cells) do col, row
-                inrect(rect, col, row) && set_char!(buf, col, row, ' ', style)
-                return nothing
-            end
-        end
-        pending[n] && blocked && crossout!(buf, rect, seen)
-    end
-    return buf
+function drawparticles!(::Val{3}, buf::Buffer, rect::Rect, v::World, placements, spcs; kwargs...)
+    return drawwires!(buf, rect, v, placements, spcs; kwargs...)
 end
 
 """
@@ -727,8 +719,10 @@ the edges on its far side, the body being convex. Between particles, the drawing
 first and each particle erases the dots its silhouette covers from everything already drawn
 behind it, so a nearer particle hides a farther one as it would if both were filled.
 
-One canvas per particle, since the erasing has to happen in depth order and a canvas carries a
-single color. They are composited at the end, in the same order.
+A face's edges are drawn in the shade its orientation gives it, the same three shades a filled
+drawing would use, so the wireframe still reads as a lit solid rather than as a flat diagram. A
+canvas carries a single color, so a particle takes one canvas per shade it uses, and the erasing
+runs over every canvas already drawn.
 """
 function drawwires!(buf::Buffer, rect::Rect, v::World, placements, spcs; ghost=nothing, blocked::Bool=false)
     idxs = [i for (i, _) in placements]
@@ -742,14 +736,12 @@ function drawwires!(buf::Buffer, rect::Rect, v::World, placements, spcs; ghost=n
 
     drawn = Canvas[]
     for n in sortperm([dot(pose.x, v.cam.view) for pose in poses])
-        style = if !pending[n]
-            speciesstyle(idxs[n])
-        elseif blocked
-            tstyle(:text_dim)
+        base = speciesrgb(idxs[n])
+        ramp = if !pending[n]
+            faceramp(base)
         else
-            speciesstyle(idxs[n]; dim=true)
+            faceramp(blocked ? REJECT_GRAY : color_lerp(base, DEEP, GHOST_FADE))
         end
-        cv = Canvas(rect.width, rect.height; style)
         faces = visiblefaces(spcs[idxs[n]], poses[n], v.cam)
         # A dot is at the center of its own cell of the dot grid, so the polygon is offset by
         # half a dot to line the scanline's sampling up with where `todots` rounds to.
@@ -761,14 +753,62 @@ function drawwires!(buf::Buffer, rect::Rect, v::World, placements, spcs; ghost=n
                 return nothing
             end
         end
-        for (poly, _) in faces
+        canvases = Dict{Int,Canvas}()
+        for (poly, shade) in faces
+            style = Style(; fg=ramp[shade], dim=pending[n])
+            cv = get!(() -> Canvas(rect.width, rect.height; style), canvases, shade)
             drawoutline!(cv, v, poly)
         end
-        pending[n] && blocked && drawreject!(cv, v, [p for (poly, _) in faces for p in poly])
-        push!(drawn, cv)
+        # Palest last, so an edge two faces share takes the color of the better lit one.
+        for (_, cv) in sort!(collect(canvases); by=first)
+            push!(drawn, cv)
+        end
+        if pending[n] && blocked
+            cross = Canvas(rect.width, rect.height; style=tstyle(:text_dim))
+            drawreject!(cross, v, [p for (poly, _) in faces for p in poly])
+            push!(drawn, cross)
+        end
     end
     for cv in drawn
         render(cv, rect, buf)
+    end
+    return buf
+end
+
+# The size of the axis indicator, in cells, and how long each arm is in braille dots.
+const AXES_W = 7
+const AXES_H = 4
+const AXES_ARM = 5.0
+
+"""
+    drawaxes!(buf, rect, cam)
+
+Draw a small set of world axes in the bottom left of `rect`, labelled `x`, `y` and `z`, showing
+which way the camera is currently looking.
+
+Only in 3D. Every pane shares one camera and none of them draws the world's origin, so without
+this the only cue to the orientation is the structure itself, which is what the drawing is
+supposed to be telling you about.
+"""
+function drawaxes!(buf::Buffer, rect::Rect, cam::Camera)
+    (rect.width < AXES_W + 1 || rect.height < AXES_H + 1) && return buf
+    box = Rect(rect.x, bottom(rect) - AXES_H + 1, AXES_W, AXES_H)
+    cv = Canvas(box.width, box.height; style=tstyle(:text_dim))
+    # The origin sits low and left, so the axes fan up and right into the box whichever way the
+    # camera is turned.
+    ox, oy = AXES_W - 1.0, 2.0 * AXES_H - 1.0
+    tips = map(1:3) do k
+        u, w = plane(cam, SVector(ntuple(j -> j == k ? 1.0 : 0.0, 3)))
+        return (ox + u * AXES_ARM, oy - w * AXES_ARM)
+    end
+    for (tx, ty) in tips
+        line!(cv, round(Int, ox), round(Int, oy), round(Int, tx), round(Int, ty))
+    end
+    render(cv, box, buf)
+    for (k, (tx, ty)) in enumerate(tips)
+        col = box.x + clamp(round(Int, tx) ÷ 2, 0, box.width - 1)
+        row = box.y + clamp(round(Int, ty) ÷ 4, 0, box.height - 1)
+        set_char!(buf, col, row, "xyz"[k], tstyle(:text_dim; bold=true))
     end
     return buf
 end
@@ -793,19 +833,11 @@ bondglyph() = '▀'
 # particle needs more of them: the projection puts three faces' worth of edges inside the
 # silhouette that a 2D outline covers with one.
 const DOTS_PER_PARTICLE = 14
-const DOTS_PER_PARTICLE_3D = 20
+const DOTS_PER_PARTICLE_3D = 24
 
 # What `-` and `=` do to the scale, and how far either may take it from the opening view.
 const ZOOM_STEP = 1.3
 const ZOOM_RANGE = 16.0
-
-# What the camera keys turn by, how squarely a site has to face the camera for the view to be
-# left where it is, and how squarely the view puts a site it does move to bring forward. The
-# second is the larger of the two: turning a little past the threshold means a site that has
-# only just come into view does not set the camera swinging again on the next keystroke.
-const TURN_STEP = π / 12
-const SITE_HIDDEN = 0.2
-const SITE_MARGIN = 0.3
 
 # Bounds on the enumeration the preview runs. `maxstrs` is what actually keeps it cheap: the
 # search stops after that many structures however permissive the rules are.
@@ -818,7 +850,11 @@ const DETAIL_W = 24
 @kwdef mutable struct EditorModel{S,P} <: Model
     base::S
     species::Vector{S}
-    placements::Vector{Placement{P}}
+    # One entry per construction window, each an arrangement built on its own. The rules are
+    # read off all of them together, so a bond one window discovers survives while another is
+    # being built, and clearing a window drops only the bonds nothing else produces.
+    windows::Vector{Vector{Placement{P}}}
+    window::Int = 1
     free::Vector{Tuple{Int,Int}} = Tuple{Int,Int}[]
     rules::Union{Nothing,BindingRules} = nothing
     anchor::Int = 1
@@ -836,6 +872,8 @@ const DETAIL_W = 24
     # terminal color searches the whole 256-color cube.
     sitergbs::Vector{ColorRGB} = ColorRGB[]
     palette::Vector{Color256} = Color256[]
+    # How many characters a color index is written in, which depends on how many there are.
+    labelw::Int = 1
     # The structures the last enumeration found, which one is selected, and what the run was
     # bounded by. `stale` marks the rules as having changed since that run.
     polyforms::Vector{Any} = Any[]
@@ -860,14 +898,31 @@ const DETAIL_W = 24
     cy::Float64 = 0.0
     refit::Bool = false
     manualzoom::Bool = false
-    # Where the camera stands in 3D. Ignored in 2D, where the drawing plane is the world.
-    azimuth::Float64 = ISO_AZIMUTH
-    elevation::Float64 = ISO_ELEVATION
+    # Which of `VIEWPOINTS` the editor is looking from. One camera serves every pane, so a
+    # structure, its species and the polyforms they enumerate are all seen the same way round.
+    # Ignored in 2D, where the drawing plane is the world.
+    viewpoint::Int = 1
 end
 
 should_quit(m::EditorModel) = m.quit
 
-camera(m::EditorModel) = Camera(m.azimuth, m.elevation)
+"""
+    placements(m)
+
+Return the placements of the construction window in front, which is the one the cursor acts on
+and the one the construction pane draws.
+"""
+placements(m::EditorModel) = m.windows[m.window]
+
+"""
+    allplacements(m)
+
+Return every window's placements. The rules come from all of them, since each window is a
+separate arrangement of the same species and each has its own contacts to contribute.
+"""
+allplacements(m::EditorModel) = m.windows
+
+camera(m::EditorModel) = VIEWPOINTS[m.viewpoint]
 
 """
     poseof(m)
@@ -881,7 +936,7 @@ function EditorModel(spcs::S) where {S<:ParticleSpecies}
     dots = dimension(spcs) == 3 ? DOTS_PER_PARTICLE_3D : DOTS_PER_PARTICLE
     opening = dots / (2 * bounding_radius(spcs))
     m = EditorModel{S,P}(;
-        base=spcs, species=S[copy(spcs)], placements=Placement{P}[(1, one(P))], scale=opening, basescale=opening
+        base=spcs, species=S[copy(spcs)], windows=[Placement{P}[(1, one(P))]], scale=opening, basescale=opening
     )
     refresh!(m)
     resetcamera!(m)
@@ -958,100 +1013,57 @@ Called after the camera turns, which redefines the projection plane the center i
 carrying the old center over unchanged would slide the structure off the screen.
 """
 function recenter!(m::EditorModel)
-    isempty(m.placements) && return m
-    box = worldbox(m.placements, m.species, camera(m))
+    isempty(placements(m)) && return m
+    box = worldbox(placements(m), m.species, camera(m))
     m.cx = (box[1] + box[2]) / 2
     m.cy = (box[3] + box[4]) / 2
     return m
 end
 
 """
-    perimetersort!(m)
+    lookfrom!(m, n)
 
-Reorder the free-site list clockwise as the camera now sees it, keeping the cursor on the site
-it was already on. The order is what the arrow keys walk, so in 3D it has to follow the camera.
+Put the camera on viewpoint `n` of [`VIEWPOINTS`](@ref), wrapping round the list, and bring the
+cursor with it: the sites available to attach to are the ones the camera shows, so turning it
+offers a different set. The cursor lands on whichever of them is nearest to where it was, which
+for a quarter turn is usually the same site seen from the side. Does nothing in 2D, where there
+is only the one view.
 """
-function perimetersort!(m::EditorModel)
-    isempty(m.free) && return m
-    at = m.free[m.anchor]
-    m.free = sortfree(m.free, m.placements, m.species, camera(m))
-    m.anchor = something(findfirst(==(at), m.free), 1)
-    return m
-end
-
-"""
-    pivot!(m)
-
-Turn the camera until the site the cursor is on faces it, and no further. Does nothing in 2D,
-where no site is ever hidden.
-
-The cursor is what the user drives and the camera follows it, so stepping onto a face on the far
-side brings that face round rather than leaving the cursor somewhere invisible. The turn is the
-smallest one that clears the face of the silhouette, taken in the plane the view direction and
-the face normal span, which keeps the structure recognizable across the move.
-"""
-function pivot!(m::EditorModel)
+function lookfrom!(m::EditorModel, n::Integer)
     dimension(m.base) == 3 || return m
-    s = anchorsite(m)
-    s === nothing && return m
-    cam = camera(m)
-    nrm = SVector{3,Float64}(s.pose.psi * SVector(1.0, 0.0, 0.0))
-    dot(nrm, cam.view) >= SITE_HIDDEN && return m
-
-    # A view exactly opposite the normal spans no plane with it, so it is nudged sideways first
-    # and the turn goes whichever way that nudge points.
-    v = dot(nrm, cam.view) < -1 + 1e-6 ? normalize(cam.view + 1e-3 * cam.right) : cam.view
-    w = normalize(v - nrm * dot(nrm, v))
-    θ = acos(SITE_MARGIN)
-    target = nrm * cos(θ) + w * sin(θ)
-
-    m.elevation = clamp(asin(clamp(target[3], -1.0, 1.0)), -MAX_ELEVATION, MAX_ELEVATION)
-    m.azimuth = atan(target[2], target[1])
-    recenter!(m)
-    perimetersort!(m)
-    return m
-end
-
-"""
-    resetcamera!(m)
-
-Put the camera back on the isometric viewpoint and the cursor on a site that viewpoint already
-shows. Does nothing in 2D.
-
-The editor opens this way, so that the first thing on screen is the canonical view rather than
-one the cursor has already swung the camera away from.
-"""
-function resetcamera!(m::EditorModel)
-    dimension(m.base) == 3 || return m
-    m.azimuth = ISO_AZIMUTH
-    m.elevation = ISO_ELEVATION
-    perimetersort!(m)
-    sites = absolutesites(m.placements, m.species)
-    cam = camera(m)
-    n = findfirst(((i, k),) -> facing(cam, sites[i][k]), m.free)
-    n === nothing || (m.anchor = n)
+    near = anchorposition(m)
+    m.viewpoint = mod1(n, length(VIEWPOINTS))
+    m.free = freesites(placements(m), m.species, camera(m))
+    anchornear!(m, near)
     return recenter!(m)
 end
 
 """
-    turn!(m, dazimuth, delevation)
+    turn!(m, step)
 
-Turn the camera by hand, by the given increments in azimuth and elevation. Does nothing in 2D.
+Step the camera `step` viewpoints along [`VIEWPOINTS`](@ref), which is what `[` and `]` do.
 """
-function turn!(m::EditorModel, dazimuth::Real, delevation::Real)
-    dimension(m.base) == 3 || return m
-    m.azimuth += dazimuth
-    m.elevation = clamp(m.elevation + delevation, -MAX_ELEVATION, MAX_ELEVATION)
-    recenter!(m)
-    perimetersort!(m)
-    return m
-end
+turn!(m::EditorModel, step::Integer) = lookfrom!(m, m.viewpoint + step)
 
+"""
+    resetcamera!(m)
+
+Put the camera back on the viewpoint the editor opens from. Does nothing in 2D.
+"""
+resetcamera!(m::EditorModel) = lookfrom!(m, 1)
+
+"""
+    ensurespecies!(m, n)
+
+Grow the species list to `n`, stopping at whatever fits inside [`MAX_COLORS`](@ref). Returns
+whether it got there, so that a digit naming a species there is no room for says so rather than
+quietly selecting a different one.
+"""
 function ensurespecies!(m::EditorModel, n::Integer)
-    while length(m.species) < n
+    while length(m.species) < n && roomforspecies(m)
         push!(m.species, copy(m.base))
     end
-    return m
+    return length(m.species) >= n
 end
 
 """
@@ -1062,26 +1074,40 @@ Called after any change to the placements, rather than per frame, since inferenc
 in the number of placements.
 """
 function refresh!(m::EditorModel; near=nothing)
-    m.free = freesites(m.placements, m.species, camera(m))
+    m.free = freesites(placements(m), m.species, camera(m))
     m.rules = buildrules(m)
     refreshpalette!(m)
     n = totalcolors(m)
     m.pair = (clamp(m.pair[1], 1, max(n, 1)), clamp(m.pair[2], 1, max(n, 1)))
     m.stale = true
-    if isempty(m.free)
-        m.anchor = 1
-    elseif near === nothing
-        m.anchor = mod1(m.anchor, length(m.free))
+    if near === nothing
+        m.anchor = isempty(m.free) ? 1 : mod1(m.anchor, length(m.free))
     else
-        # Attaching consumes the anchor site and reorders the list, so carrying the index over
-        # would put the cursor somewhere unrelated. Carrying the position over leaves it on the
-        # nearest site to the one just used.
-        sites = absolutesites(m.placements, m.species)
-        m.anchor = argmin(n -> sum(abs2, sites[m.free[n][1]][m.free[n][2]].pose.x - near), eachindex(m.free))
+        anchornear!(m, near)
     end
     m.incoming = mod1(m.incoming, nsites(m.species[m.active_species]))
     m.twist = mod(m.twist, max(ntwists(m), 1))
-    pivot!(m)
+    return m
+end
+
+"""
+    anchornear!(m, x)
+
+Put the cursor on the free site nearest the world position `x`.
+
+Whatever changes the free-site list, an attachment or a turn of the camera, reorders it, so
+carrying the index over would put the cursor somewhere unrelated. Carrying the position over
+leaves it on the nearest site to the one it was on.
+"""
+function anchornear!(m::EditorModel, x)
+    if isempty(m.free)
+        m.anchor = 1
+    elseif x === nothing
+        m.anchor = mod1(m.anchor, length(m.free))
+    else
+        sites = absolutesites(placements(m), m.species)
+        m.anchor = argmin(n -> sum(abs2, sites[m.free[n][1]][m.free[n][2]].pose.x - x), eachindex(m.free))
+    end
     return m
 end
 
@@ -1126,8 +1152,16 @@ function refreshpalette!(m::EditorModel)
         end
     end
     m.palette = [rgb256(c) for c in m.sitergbs]
+    m.labelw = labelwidth(length(m.sitergbs))
     return m
 end
+
+"""
+    label(m, c)
+
+Return the text color index `c` is drawn as, in the width the current rules call for.
+"""
+label(m::EditorModel, c::Integer) = colorlabel(c, m.labelw)
 
 """
     sitecolor(m, c)
@@ -1208,14 +1242,15 @@ function inferredmatrix(m::EditorModel)
     mat = zeros(Bool, n, n)
     n == 0 && return mat
     gc = sitecolors(m)
-    sites = absolutesites(m.placements, m.species)
-    for i in eachindex(m.placements), j in eachindex(m.placements)
-        j > i || continue
-        for (k1, s1) in enumerate(sites[i]), (k2, s2) in enumerate(sites[j])
-            if istouching(s1, s2) && isaligned(s1, s2)
-                c1 = gc[(m.placements[i][1], k1)]
-                c2 = gc[(m.placements[j][1], k2)]
-                mat[c1, c2] = mat[c2, c1] = true
+    for ps in allplacements(m)
+        sites = absolutesites(ps, m.species)
+        for i in eachindex(ps), j in eachindex(ps)
+            j > i || continue
+            for (k1, s1) in enumerate(sites[i]), (k2, s2) in enumerate(sites[j])
+                if istouching(s1, s2) && isaligned(s1, s2)
+                    mat[gc[(ps[i][1], k1)], gc[(ps[j][1], k2)]] = true
+                    mat[gc[(ps[j][1], k2)], gc[(ps[i][1], k1)]] = true
+                end
             end
         end
     end
@@ -1251,7 +1286,7 @@ Unlike the geometry-only form these exist as soon as a particle does, with no bo
 none have been made, so that the rules pane has a matrix to edit from the start.
 """
 function buildrules(m::EditorModel)
-    isempty(m.placements) && return nothing
+    isempty(placements(m)) && return nothing
     kept = [m.species[sp] for sp in shownspecies(m)]
     return BindingRules(effectivematrix(m), kept)
 end
@@ -1268,11 +1303,21 @@ function notify!(m::EditorModel, text::AbstractString; kind::Symbol=:info)
 end
 
 """
+    roomforspecies(m)
+
+Whether another species would still fit inside the [`MAX_COLORS`](@ref) colors the editor can
+label. Each one takes a color range of its own, so the limit is on species times sites.
+"""
+roomforspecies(m::EditorModel) = totalcolors(m) + nsites(m.base) <= MAX_COLORS
+
+"""
     addspecies!(m)
 
-Append another instance of the editor's species and make it the active one.
+Append another instance of the editor's species and make it the active one, unless that would
+take the rules past the colors the editor can label.
 """
 function addspecies!(m::EditorModel)
+    roomforspecies(m) || return notify!(m, string("no room past ", MAX_COLORS, " colors"); kind=:warning)
     push!(m.species, copy(m.base))
     m.active_species = length(m.species)
     refresh!(m)
@@ -1291,7 +1336,7 @@ taking those with it.
 function removespecies!(m::EditorModel)
     n = length(m.species)
     n > 1 || return notify!(m, "one species is the minimum"; kind=:warning)
-    n in usedspecies(m.placements) && return notify!(m, "species $n is placed"; kind=:warning)
+    n in usedspecies(Iterators.flatten(allplacements(m))) && return notify!(m, "species $n is placed"; kind=:warning)
 
     gc = sitecolors(m)
     cols = [gc[(n, k)] for k in 1:nsites(m.species[n])]
@@ -1320,7 +1365,7 @@ function togglebond!(m::EditorModel, (c1, c2)::Tuple{Int,Int})
     m.overrides[(c1, c2)] = on
     m.overrides[(c2, c1)] = on
     refresh!(m)
-    return notify!(m, string(colorlabel(c1), on ? " ─ " : " ╌ ", colorlabel(c2), on ? " bonded" : " cleared"))
+    return notify!(m, string(label(m, c1), on ? " ─ " : " ╌ ", label(m, c2), on ? " bonded" : " cleared"))
 end
 
 """
@@ -1343,7 +1388,7 @@ structure has no free site left.
 function anchorsite(m::EditorModel)
     isempty(m.free) && return nothing
     i, k = m.free[m.anchor]
-    spidx, pose = m.placements[i]
+    spidx, pose = placements(m)[i]
     return pose * bindingsite(m.species[spidx], k)
 end
 
@@ -1371,8 +1416,8 @@ function pendingcontacts(m::EditorModel, preview)
     out = Tuple{typeof(preview.x),Int,Int,Int}[]
     spcs = m.species[m.active_species]
     pending = [preview * s for s in bindingsites(spcs)]
-    sites = absolutesites(m.placements, m.species)
-    for i in eachindex(m.placements), (k1, s1) in enumerate(sites[i]), (k2, s2) in enumerate(pending)
+    sites = absolutesites(placements(m), m.species)
+    for i in eachindex(placements(m)), (k1, s1) in enumerate(sites[i]), (k2, s2) in enumerate(pending)
         istouching(s1, s2) && push!(out, (s1.pose.x, i, k1, k2))
     end
     return out
@@ -1389,7 +1434,7 @@ looks refused beforehand rather than only saying so afterwards.
 """
 function blockedby(m::EditorModel, pose)
     spcs = m.species[m.active_species]
-    for (i, (j, other)) in enumerate(m.placements)
+    for (i, (j, other)) in enumerate(placements(m))
         overlap(spcs => pose, m.species[j] => other) && return i
     end
     return nothing
@@ -1414,30 +1459,15 @@ function attach!(m::EditorModel)
     blocked = blockedby(m, pose)
     blocked === nothing || return notify!(m, "overlaps particle $blocked"; kind=:warning)
     near = anchorposition(m)
-    push!(m.placements, (m.active_species, pose))
+    push!(placements(m), (m.active_species, pose))
     m.message = ""
     refresh!(m; near)
     return m
 end
 
-function seed!(m::EditorModel)
-    # A new component goes far enough from everything already placed that it cannot touch it,
-    # so its species can be given rules of its own.
-    offset = 0.0
-    for (i, pose) in m.placements
-        offset = max(offset, pose.x[1] + 3 * bounding_radius(m.species[i]))
-    end
-    origin = one(poseof(m))
-    pose = typeof(origin)(origin.x + SVector(offset, zero(offset)), origin.psi)
-    push!(m.placements, (m.active_species, pose))
-    # The cursor follows onto the new component, which is where the next attachment belongs.
-    refresh!(m; near=pose.x)
-    return m
-end
-
 function undo!(m::EditorModel)
     near = anchorposition(m)
-    length(m.placements) > 1 && pop!(m.placements)
+    length(placements(m)) > 1 && pop!(placements(m))
     refresh!(m; near)
     return m
 end
@@ -1445,23 +1475,60 @@ end
 """
     reset!(m)
 
-Clear the construction back to a single particle, keeping the rules it produced.
+Clear the window in front back to a single particle, or close it if it is already clear and it is
+not the only one.
 
-The bonds the geometry currently implies are written into the overrides first, so that emptying
-the drawing does not empty the table with it: an arrangement can be built to discover a rule and
-then cleared away to build the next one.
+Clearing takes with it the bonds that only this window produced, and leaves the ones another
+window or a hand edit also accounts for. An arrangement can therefore be built to discover a
+rule, kept while the next is built in a window of its own, and cleared away once it has served.
 """
 function reset!(m::EditorModel)
-    mat = effectivematrix(m)
-    for c1 in axes(mat, 1), c2 in axes(mat, 2)
-        m.overrides[(c1, c2)] = mat[c1, c2]
-    end
     P = poseof(m)
-    m.placements = Placement{P}[(m.active_species, one(P))]
+    if length(placements(m)) == 1 && length(m.windows) > 1
+        deleteat!(m.windows, m.window)
+        m.window = min(m.window, length(m.windows))
+        m.refit = true
+        refresh!(m)
+        return notify!(m, string("closed window, ", length(m.windows), " left"))
+    end
+    m.windows[m.window] = Placement{P}[(m.active_species, one(P))]
     m.refit = true
     refresh!(m)
     resetcamera!(m)
-    return m
+    return notify!(m, "cleared window $(m.window)")
+end
+
+"""
+    newwindow!(m)
+
+Open another construction window, in front, with one particle in it.
+
+A second arrangement of the same species is how a rule that the first cannot show gets built,
+and both stay on the books: the rules are read off every window at once.
+"""
+function newwindow!(m::EditorModel)
+    P = poseof(m)
+    insert!(m.windows, m.window + 1, Placement{P}[(m.active_species, one(P))])
+    m.window += 1
+    m.refit = true
+    refresh!(m)
+    resetcamera!(m)
+    return notify!(m, string("window ", m.window, " of ", length(m.windows)))
+end
+
+"""
+    stepwindow!(m, step)
+
+Bring another construction window to the front, wrapping round the list. The view refits to
+whatever is in it, the windows being separate arrangements with nothing to line up.
+"""
+function stepwindow!(m::EditorModel, step::Int)
+    length(m.windows) > 1 || return notify!(m, "one window"; kind=:warning)
+    m.window = mod1(m.window + step, length(m.windows))
+    m.refit = true
+    refresh!(m)
+    resetcamera!(m)
+    return notify!(m, string("window ", m.window, " of ", length(m.windows)))
 end
 
 ### Input
@@ -1485,7 +1552,7 @@ function stepanchor!(m::EditorModel, dir::Symbol)
     length(m.free) > 1 || return m
     d = getfield(ARROWS, dir)
     cam = camera(m)
-    sites = absolutesites(m.placements, m.species)
+    sites = absolutesites(placements(m), m.species)
     at(n) = plane(cam, sites[m.free[n][1]][m.free[n][2]].pose.x)
     hu, hv = at(m.anchor)
     function alignment(n)
@@ -1496,7 +1563,7 @@ function stepanchor!(m::EditorModel, dir::Symbol)
     nxt = mod1(m.anchor + 1, length(m.free))
     prv = mod1(m.anchor - 1, length(m.free))
     m.anchor = alignment(nxt) >= alignment(prv) ? nxt : prv
-    return pivot!(m)
+    return m
 end
 
 """
@@ -1602,6 +1669,11 @@ function update!(m::EditorModel, evt::KeyEvent)
     elseif k === :char && c == 'e'
         enumerate!(m)
         return nothing
+    elseif k === :char && (c == '[' || c == ']')
+        # One camera serves every pane, so turning it turns the structure being built, the
+        # species drawings and the enumerated polyforms together.
+        turn!(m, c == ']' ? 1 : -1)
+        return nothing
     end
 
     if m.focus === :rules
@@ -1635,10 +1707,7 @@ function update!(m::EditorModel, evt::KeyEvent)
     if k === :up || k === :down || k === :left || k === :right
         stepanchor!(m, k)
     elseif k === :char && (c == ',' || c == '.')
-        if !isempty(m.free)
-            m.anchor = mod1(m.anchor + (c == '.' ? 1 : -1), length(m.free))
-            pivot!(m)
-        end
+        isempty(m.free) || (m.anchor = mod1(m.anchor + (c == '.' ? 1 : -1), length(m.free)))
     elseif k === :enter
         attach!(m)
     elseif k === :backspace
@@ -1652,7 +1721,9 @@ function update!(m::EditorModel, evt::KeyEvent)
     elseif k === :char && (c == 't' || c == 'T')
         m.twist = mod(m.twist + (c == 't' ? 1 : -1), ntwists(m))
     elseif k === :char && c == 'n'
-        seed!(m)
+        newwindow!(m)
+    elseif k === :char && (c == 'w' || c == 'W')
+        stepwindow!(m, c == 'w' ? 1 : -1)
     elseif k === :char && c == 'c'
         reset!(m)
     elseif k === :char && c == '0'
@@ -1661,17 +1732,16 @@ function update!(m::EditorModel, evt::KeyEvent)
         zoom!(m, 1 / ZOOM_STEP)
     elseif k === :char && (c == '=' || c == '+')
         zoom!(m, ZOOM_STEP)
-    elseif k === :char && (c == '[' || c == ']')
-        turn!(m, c == ']' ? TURN_STEP : -TURN_STEP, 0.0)
-    elseif k === :char && (c == '{' || c == '}')
-        turn!(m, 0.0, c == '}' ? TURN_STEP : -TURN_STEP)
     elseif k === :char && isdigit(c)
         d = parse(Int, c)
-        ensurespecies!(m, d)
-        m.active_species = d
-        m.incoming = mod1(m.incoming, nsites(m.species[d]))
-        m.twist = mod(m.twist, ntwists(m))
-        refresh!(m)
+        if ensurespecies!(m, d)
+            m.active_species = d
+            m.incoming = mod1(m.incoming, nsites(m.species[d]))
+            m.twist = mod(m.twist, ntwists(m))
+            refresh!(m)
+        else
+            notify!(m, string("no room past ", MAX_COLORS, " colors"); kind=:warning)
+        end
     end
     return nothing
 end
@@ -1700,7 +1770,7 @@ function view(m::EditorModel, f::Frame)
     # A matrix too big for the rules pane gets a pane of its own rather than being dropped for
     # the pair list: the whole window height holds a far larger one than a third of a pane does.
     inline = matrixinline(m, PANE_W - 2, f.area.height)
-    wanted = m.rules === nothing ? 0 : matrixwidth(m.rules) + 2
+    wanted = m.rules === nothing ? 0 : matrixwidth(m) + 2
     withmatrix = !inline && wanted <= room
     room -= withmatrix ? wanted : 0
     withconstruction = m.showconstruction && room >= PANE_W
@@ -1751,7 +1821,7 @@ function draw_status(m::EditorModel, rect::Rect, buf::Buffer)
         length(m.species) == 1 ? " species  " : " species  ",
         m.rules === nothing ? 0 : nbonds(m.rules),
         " bonds  ",
-        length(m.placements),
+        length(placements(m)),
         " placed",
     )
     bar = StatusBar(; left=[Span(m.message, style)], right=[Span(right, tstyle(:text_dim))])
@@ -1818,6 +1888,7 @@ function draw_sidebar(m::EditorModel, rect::Rect, buf::Buffer)
     push!(lines, header("Any pane", :none))
     push!(lines, key("tab", "next pane"))
     push!(lines, key("b", m.showconstruction ? "hide build" : "build"))
+    dimension(m.base) == 3 && push!(lines, key("[ ]", string("view ", m.viewpoint, "/", length(VIEWPOINTS))))
     push!(lines, key("q", "accept"))
 
     c1, c2 = m.pair
@@ -1825,7 +1896,7 @@ function draw_sidebar(m::EditorModel, rect::Rect, buf::Buffer)
     rules = [
         header("Rules", :rules),
         (
-            string("  ", colorlabel(c1), on ? " ─ " : " ╌ ", colorlabel(c2), on ? "  bonded" : ""),
+            string("  ", label(m, c1), on ? " ─ " : " ╌ ", label(m, c2), on ? "  bonded" : ""),
             on ? tstyle(:success) : tstyle(:text),
         ),
         key("↑↓←→", "cell"),
@@ -1858,10 +1929,17 @@ function draw_sidebar(m::EditorModel, rect::Rect, buf::Buffer)
             ],
         )
         ntwists(m) > 1 && push!(build, key("t / T", "twist"))
-        if dimension(m.base) == 3
-            append!(build, [key("[ ]", "turn"), key("{ }", "tilt")])
-        end
-        append!(build, [key("enter", "attach"), key("bksp", "undo"), key("1-9", "species"), key("n / c", "part/clear")])
+        append!(
+            build,
+            [
+                key("enter", "attach"),
+                key("bksp", "undo"),
+                key("- = 0", "zoom/fit"),
+                key("1-9", "species"),
+                key("n / w", "new/next"),
+                key("c", "clear/close"),
+            ],
+        )
     end
 
     enum = [
@@ -1884,8 +1962,9 @@ function draw_sidebar(m::EditorModel, rect::Rect, buf::Buffer)
 end
 
 function draw_construction(m::EditorModel, rect::Rect, buf::Buffer)
-    title = string(length(m.placements), " particles")
-    box = render(focusblock(m, :construction; title="Construction", title_right=title), rect, buf)
+    title = string(length(placements(m)), " particles")
+    name = length(m.windows) > 1 ? string("Construction ", m.window, "/", length(m.windows)) : "Construction"
+    box = render(focusblock(m, :construction; title=name, title_right=title), rect, buf)
     (box.width < 2 || box.height < 3) && return buf
 
     # The species live here rather than in the sidebar: which one is active only decides what
@@ -1894,22 +1973,23 @@ function draw_construction(m::EditorModel, rect::Rect, buf::Buffer)
     inner = Rect(box.x, box.y + 1, box.width, box.height - 1)
 
     preview = previewpose(m)
-    bounds = preview === nothing ? m.placements : vcat(m.placements, [(m.active_species, preview)])
+    bounds = preview === nothing ? placements(m) : vcat(placements(m), [(m.active_species, preview)])
     v = worldfor!(m, bounds, inner.width, inner.height)
 
     blocked = preview === nothing ? nothing : blockedby(m, preview)
     ghost = preview === nothing ? nothing : (m.active_species, preview)
-    drawparticles!(buf, inner, v, m.placements, m.species; ghost, blocked=blocked !== nothing, wire=true)
+    drawparticles!(buf, inner, v, placements(m), m.species; ghost, blocked=blocked !== nothing)
+    dimension(m.base) == 3 && drawaxes!(buf, inner, v.cam)
 
     # Labels sit at each site's own position, so the colors read straight off the drawing. A
     # bond gets both of its colors, written side by side, since which pair meets is the thing
     # being decided.
     cell(x) = (inner.x + x[1] ÷ 2, inner.y + x[2] ÷ 4)
-    label!(x, style, ch) = set_char!(buf, cell(x)..., ch, style)
+    label!(x, style, c) = set_string!(buf, cell(x)..., label(m, c), style; max_x=right(inner))
     function pair!(x, c1, style1, c2, style2)
         col, row = cell(x)
-        set_char!(buf, col, row, colorlabel(c1), style1)
-        set_char!(buf, col + 1, row, colorlabel(c2), style2)
+        set_string!(buf, col, row, label(m, c1), style1; max_x=right(inner))
+        set_string!(buf, col + m.labelw, row, label(m, c2), style2; max_x=right(inner))
         return buf
     end
 
@@ -1929,12 +2009,12 @@ function draw_construction(m::EditorModel, rect::Rect, buf::Buffer)
             facing(v.cam, site) || continue
             c = gc[(m.active_species, k)]
             sitestyle = blocked === nothing ? Style(; fg=sitecolor(m, c), dim=true) : tstyle(:text_dim)
-            label!(todots(v, site.pose.x), sitestyle, colorlabel(c))
+            label!(todots(v, site.pose.x), sitestyle, c)
         end
     end
 
     if interiorbonds(m.base)
-        for (x, sp1, k1, sp2, k2) in contacts(m.placements, m.species)
+        for (x, sp1, k1, sp2, k2) in contacts(placements(m), m.species)
             c1, c2 = gc[(sp1, k1)], gc[(sp2, k2)]
             pair!(todots(v, x), c1, colorstyle(m, c1), c2, colorstyle(m, c2))
         end
@@ -1942,12 +2022,12 @@ function draw_construction(m::EditorModel, rect::Rect, buf::Buffer)
 
     # Free sites carry their color, so the construction and the rules pane label the same thing
     # the same way. The anchor is the one the next attachment seats against.
-    sites = absolutesites(m.placements, m.species)
+    sites = absolutesites(placements(m), m.species)
     for (n, (i, k)) in enumerate(m.free)
         n == m.anchor && continue
         facing(v.cam, sites[i][k]) || continue
-        c = gc[(m.placements[i][1], k)]
-        label!(todots(v, sites[i][k].pose.x), colorstyle(m, c), colorlabel(c))
+        c = gc[(placements(m)[i][1], k)]
+        label!(todots(v, sites[i][k].pose.x), colorstyle(m, c), c)
     end
 
     # The pending bonds last, so they win their cells. Seating against the chosen site can put
@@ -1956,16 +2036,16 @@ function draw_construction(m::EditorModel, rect::Rect, buf::Buffer)
     a = anchorsite(m)
     if a !== nothing && preview === nothing
         i, k = m.free[m.anchor]
-        ca = gc[(m.placements[i][1], k)]
-        label!(todots(v, a.pose.x), Style(; fg=sitecolor(m, ca), bold=true, underline=true), colorlabel(ca))
+        ca = gc[(placements(m)[i][1], k)]
+        label!(todots(v, a.pose.x), Style(; fg=sitecolor(m, ca), bold=true, underline=true), ca)
     elseif preview !== nothing && blocked !== nothing
         i, k = m.free[m.anchor]
-        ca = gc[(m.placements[i][1], k)]
-        label!(todots(v, a.pose.x), tstyle(:text_dim; bold=true), colorlabel(ca))
+        ca = gc[(placements(m)[i][1], k)]
+        label!(todots(v, a.pose.x), tstyle(:text_dim; bold=true), ca)
     elseif preview !== nothing
         aimed = a === nothing ? (0, 0) : m.free[m.anchor]
         for (x, i, k1, k2) in pendingcontacts(m, preview)
-            c1 = gc[(m.placements[i][1], k1)]
+            c1 = gc[(placements(m)[i][1], k1)]
             c2 = gc[(m.active_species, k2)]
             pair!(
                 todots(v, x),
@@ -2016,7 +2096,7 @@ function draw_preview(m::EditorModel, rect::Rect, buf::Buffer)
         col = (slot - 1) % ncols
         row = (slot - 1) ÷ ncols
         r = Rect(grid.x + col * THUMB_W, grid.y + row * THUMB_H, THUMB_W - 1, THUMB_H - 1)
-        draw_thumbnail(m, m.polyforms[n], r, buf; wire=true)
+        draw_thumbnail(m, m.polyforms[n], r, buf)
         # Each one carries its position in the list, so a structure can be named when talking
         # about it and the detail box can say which it is showing.
         selected = n == m.selected
@@ -2048,12 +2128,10 @@ function draw_detail(m::EditorModel, rect::Rect, buf::Buffer)
     title = string("#", i)
     inner = render(Block(; title, title_right=string(n, n == 1 ? " particle" : " particles")), rect, buf)
     (inner.width < 3 || inner.height < 2) && return buf
-    if inner.height > 4
-        draw_thumbnail(m, poly, Rect(inner.x, inner.y, inner.width, inner.height - 2), buf; labels=true)
-        draw_composition(m, poly, Rect(inner.x, bottom(inner) - 1, inner.width, 2), buf)
-    else
-        draw_thumbnail(m, poly, inner, buf; labels=true)
-    end
+    drawing = inner.height > 4 ? Rect(inner.x, inner.y, inner.width, inner.height - 2) : inner
+    draw_thumbnail(m, poly, drawing, buf; labels=true)
+    inner.height > 4 && draw_composition(m, poly, Rect(inner.x, bottom(inner) - 1, inner.width, 2), buf)
+    dimension(m.base) == 3 && drawaxes!(buf, drawing, camera(m))
     return buf
 end
 
@@ -2090,15 +2168,15 @@ function draw_composition(m::EditorModel, poly, rect::Rect, buf::Buffer)
     return buf
 end
 
-function draw_thumbnail(m::EditorModel, poly, rect::Rect, buf::Buffer; labels::Bool=false, wire::Bool=false)
+function draw_thumbnail(m::EditorModel, poly, rect::Rect, buf::Buffer; labels::Bool=false)
     (rect.width < 3 || rect.height < 2) && return buf
     # Drawn from the polyform's own rules, since its particles index that species list rather
     # than whatever the editor has moved on to.
     spcs = species(bindingrules(poly))
     placements = [(p.speciesindex, p.pose) for p in poly.particles]
     isempty(placements) && return buf
-    v = fitworld(placements, spcs, rect.width, rect.height)
-    drawparticles!(buf, rect, v, placements, spcs; wire)
+    v = fitworld(placements, spcs, rect.width, rect.height; cam=camera(m))
+    drawparticles!(buf, rect, v, placements, spcs)
     labels && drawsitelabels!(m, poly, spcs, placements, v, rect, buf)
     return buf
 end
@@ -2126,8 +2204,8 @@ function drawsitelabels!(m::EditorModel, poly, spcs, placements, v::World, rect:
             interiorbonds(spcs[placements[i][1]]) || continue
             c1, c2 = color(s1), color(s2)
             col, row = cell(todots(v, s1.pose.x))
-            set_char!(buf, col, row, colorlabel(c1), colorstyle(m, c1))
-            set_char!(buf, col + 1, row, colorlabel(c2), colorstyle(m, c2))
+            set_string!(buf, col, row, label(m, c1), colorstyle(m, c1); max_x=right(rect))
+            set_string!(buf, col + m.labelw, row, label(m, c2), colorstyle(m, c2); max_x=right(rect))
         end
     end
     for i in eachindex(placements), (k, s) in enumerate(sites[i])
@@ -2135,62 +2213,72 @@ function drawsitelabels!(m::EditorModel, poly, spcs, placements, v::World, rect:
         facing(v.cam, s) || continue
         c = color(s)
         col, row = cell(todots(v, s.pose.x))
-        set_char!(buf, col, row, colorlabel(c), colorstyle(m, c))
+        set_string!(buf, col, row, label(m, c), colorstyle(m, c); max_x=right(rect))
     end
     return buf
 end
 
 """
-    matrixfits(rules, w)
-
-Whether the interaction matrix is narrow enough to draw in a `w` column pane. Each color costs
-two columns, plus two for the row labels.
-"""
-matrixfits(rules::BindingRules, w::Int) = 2 + 2 * ncolors(rules) <= w
-
-"""
-    matrixwidth(rules)
+    matrixwidth(m)
+    matrixfits(m, w)
     matrixinline(m, w, h)
 
-How wide the matrix needs to be, and whether the rules pane can hold it beside the pair list in
-`w` by `h` cells.
+How wide the interaction matrix needs to be, whether it fits a `w` column pane, and whether the
+rules pane can hold it beside the pair list in `w` by `h` cells.
+
+A color costs its label plus a separating column, and the row labels cost one more of each at the
+left, so the width follows how many characters a label takes.
 """
-matrixwidth(rules::BindingRules) = 2 + 2 * ncolors(rules)
+function matrixwidth(m::EditorModel)
+    m.rules === nothing && return 0
+    return (m.labelw + 1) * (ncolors(m.rules) + 1)
+end
+
+matrixfits(m::EditorModel, w::Int) = matrixwidth(m) <= w
 
 function matrixinline(m::EditorModel, w::Int, h::Int)
     rules = m.rules
     rules === nothing && return true
-    pairsw = min(PAIR_W + 1, w ÷ 2)
+    pairsw = min(pairwidth(m) + 1, w ÷ 2)
     reserved = min(length(shownspecies(m)) + 1, GALLERY_MIN_ROW)
-    return matrixfits(rules, w - pairsw) && ncolors(rules) + 1 <= max(h - 1 - reserved, 1)
+    return matrixfits(m, w - pairsw) && ncolors(rules) + 1 <= max(h - 1 - reserved, 1)
 end
 
 """
-    gallerylayout(n, w, h)
+    gallerylayout(n, sites, w, h)
 
-Return `(ncols, nrows, rowheight)` for drawing `n` species in a `w` by `h` region, or `nothing`
-if they cannot be drawn large enough to read.
+Return `(ncols, nrows, rowheight)` for drawing `n` species of `sites` binding sites each in a `w`
+by `h` region, or `nothing` if they cannot be drawn large enough to read.
 
 The width is filled first and the height spent afterwards: a species drawn in a tall thin column
 of its own wastes most of the pane, so as many fit across as the boxes have room for and the rows
 take what is left. Once the rows would be too short to read the gallery gives up and the caller
 falls back to a compact list.
+
+A species carries a label at every site, so how big it has to be drawn depends on how many sites
+it has: an icosahedron at the size a square is legible at has twenty labels landing on top of one
+another. Both the width a box needs and the height it may grow to therefore rise with the site
+count.
 """
-function gallerylayout(n::Int, w::Int, h::Int)
-    (n < 1 || w < GALLERY_MIN_W || h < GALLERY_MIN_ROW) && return nothing
-    ncols = min(n, max(1, w ÷ GALLERY_MIN_W))
+function gallerylayout(n::Int, sites::Int, w::Int, h::Int)
+    minw = max(GALLERY_MIN_W, 2 + isqrt(max(sites, 1)) * 4)
+    (n < 1 || w < minw || h < GALLERY_MIN_ROW) && return nothing
+    ncols = min(n, max(1, w ÷ minw))
     nrows = cld(n, ncols)
     rowheight = h ÷ nrows
     rowheight < GALLERY_MIN_ROW && return nothing
-    return (ncols, nrows, min(rowheight, GALLERY_ROW))
+    return (ncols, nrows, min(rowheight, max(GALLERY_ROW, 1 + isqrt(max(sites, 1)) * 2)))
 end
 
 """
-    pairrows(rules, w)
+    pairrows(m, w)
 
 Return how many rows the pair list needs in a `w` column pane, laying pairs out in columns.
 """
-pairrows(rules::BindingRules, w::Int) = cld(max(length(bonded_colors(rules)), 1), max(1, w ÷ PAIR_W))
+pairrows(m::EditorModel, w::Int) = cld(max(length(bonded_colors(m.rules)), 1), max(1, w ÷ pairwidth(m)))
+
+"How many columns one entry of the pair list takes, which follows the width of a color label."
+pairwidth(m::EditorModel) = PAIR_W + 2 * (m.labelw - 1)
 
 function draw_rules(m::EditorModel, rect::Rect, buf::Buffer; withmatrix::Bool=true, elsewhere::Bool=false)
     rules = m.rules
@@ -2211,14 +2299,14 @@ function draw_rules(m::EditorModel, rect::Rect, buf::Buffer; withmatrix::Bool=tr
     # The species summary always keeps a few rows, so the tables can never squeeze it out.
     reserved = min(length(used) + 1, GALLERY_MIN_ROW)
     budget = max(inner.height - 1 - reserved, 1)
-    pairsw = min(PAIR_W + 1, inner.width ÷ 2)
+    pairsw = min(pairwidth(m) + 1, inner.width ÷ 2)
     tableheight = if withmatrix
-        max(ncolors(rules) + 1, min(pairrows(rules, pairsw), budget))
+        max(ncolors(rules) + 1, min(pairrows(m, pairsw), budget))
     else
-        min(pairrows(rules, inner.width), budget)
+        min(pairrows(m, inner.width), budget)
     end
     room = max(inner.height - tableheight - 1, 0)
-    layout = gallerylayout(length(used), inner.width, room)
+    layout = gallerylayout(length(used), maximum(nsites(m.species[i]) for i in used; init=1), inner.width, room)
     galleryheight = layout === nothing ? room : layout[2] * layout[3]
 
     parts = split_layout(Layout(Vertical, Constraint[Fixed(galleryheight), Fixed(1), Fill()]), inner)
@@ -2250,7 +2338,7 @@ many species to draw them. Carries the same information as the gallery apart fro
 function draw_specieslist(m::EditorModel, rules::BindingRules, used, rect::Rect, buf::Buffer)
     (isempty(used) || rect.height < 1) && return buf
     gc = sitecolors(m)
-    entryw = 5 + 2 * maximum(nsites(m.species[i]) for i in used)
+    entryw = 4 + (m.labelw + 1) * maximum(nsites(m.species[i]) for i in used)
     ncols = max(1, rect.width ÷ entryw)
     capacity = ncols * rect.height
     shown = length(used) > capacity ? capacity - 1 : length(used)
@@ -2260,11 +2348,12 @@ function draw_specieslist(m::EditorModel, rules::BindingRules, used, rect::Rect,
         y = rect.y + (n - 1) ÷ ncols
         set_string!(buf, x, y, string(rpad(n, 2), "■"), speciesstyle(spidx); max_x=right(rect))
         for k in 1:nsites(m.species[spidx])
-            cx = x + 3 + 2 * k
-            cx > right(rect) && break
+            cx = x + 3 + (m.labelw + 1) * (k - 1)
+            cx + m.labelw - 1 > right(rect) && break
             c = gc[(spidx, k)]
             inert = c <= ncolors(rules) ? isinert(rules, c) : true
-            set_char!(buf, cx, y, colorlabel(c), inert ? tstyle(:text_dim) : colorstyle(m, c; bold=true))
+            style = inert ? tstyle(:text_dim) : colorstyle(m, c; bold=true)
+            set_string!(buf, cx, y, label(m, c), style; max_x=right(rect))
         end
     end
     if shown < length(used)
@@ -2302,25 +2391,29 @@ function draw_gallery(m::EditorModel, rules::BindingRules, used, layout, rect::R
         cr = Rect(r.x, r.y + 1, r.width, r.height - 1)
         spcs = m.species[spidx]
         pose = one(posetype(spcs))
-        v = fitworld([(spidx, pose)], m.species, cr.width, cr.height)
-        drawparticles!(buf, cr, v, [(spidx, pose)], m.species; wire=true)
+        v = fitworld([(spidx, pose)], m.species, cr.width, cr.height; cam=camera(m))
+        drawparticles!(buf, cr, v, [(spidx, pose)], m.species)
         # The two colors the rules cursor names are marked here as well, so that a cell of the
-        # matrix can be read as the sites it stands for. Every site is named, those on the far
-        # side of a 3D particle included: this is the reference drawing of the species, so a
-        # color that appears in the matrix has to appear here too, only dimmed to say that the
-        # face carrying it is turned away.
+        # matrix can be read as the sites it stands for. Those two are named wherever they are,
+        # since pointing at a cell has to point at something; every other site is named only
+        # while the camera can see it, a label sitting on a face that is turned away having
+        # looked like it belonged to whichever face is in front of it.
         for (k, s) in enumerate(bindingsites(spcs))
             c = gc[(spidx, k)]
+            cursor = c == m.pair[1] || c == m.pair[2]
+            (cursor || facing(v.cam, s)) || continue
             dx, dy = todots(v, s.pose.x)
             inert = c <= ncolors(rules) ? isinert(rules, c) : true
-            style = if c == m.pair[1] || c == m.pair[2]
+            style = if cursor
                 Style(; fg=sitecolor(m, c), bold=true, underline=true)
-            elseif inert || !facing(v.cam, s)
+            elseif inert
                 tstyle(:text_dim)
             else
                 colorstyle(m, c; bold=true)
             end
-            set_char!(buf, cr.x + dx ÷ 2, cr.y + dy ÷ 4, colorlabel(c), style)
+            set_string!(
+                buf, min(cr.x + dx ÷ 2, right(cr) - m.labelw + 1), cr.y + dy ÷ 4, label(m, c), style; max_x=right(cr)
+            )
         end
     end
     return buf
@@ -2343,17 +2436,19 @@ function draw_matrix(m::EditorModel, rect::Rect, buf::Buffer)
     imat = interactionmatrix(rules)
     active = m.focus === :rules
     r1, c1 = m.pair
+    w = m.labelw
     for c in 1:n
-        x = rect.x + 2 + 2 * (c - 1)
-        x > right(rect) && break
-        set_char!(buf, x, rect.y, colorlabel(c), c == c1 ? colorstyle(m, c; bold=true) : tstyle(:text_dim))
+        x = rect.x + w + 1 + (w + 1) * (c - 1)
+        x + w - 1 > right(rect) && break
+        style = c == c1 ? colorstyle(m, c; bold=true) : tstyle(:text_dim)
+        set_string!(buf, x, rect.y, label(m, c), style; max_x=right(rect))
     end
     for c in 1:n
         y = rect.y + c
         y > bottom(rect) && break
-        set_char!(buf, rect.x, y, colorlabel(c), colorstyle(m, c; bold=c == r1))
+        set_string!(buf, rect.x, y, label(m, c), colorstyle(m, c; bold=c == r1); max_x=right(rect))
         for c2 in 1:n
-            x = rect.x + 2 + 2 * (c2 - 1)
+            x = rect.x + w + 1 + (w + 1) * (c2 - 1) + w - 1
             x > right(rect) && break
             on = imat[c, c2]
             if !on
@@ -2392,27 +2487,31 @@ and any that still do not fit are counted.
 """
 function draw_pairs(m::EditorModel, rect::Rect, buf::Buffer)
     rules = m.rules
-    (rules === nothing || rect.height < 1 || rect.width < PAIR_W) && return buf
+    (rules === nothing || rect.height < 1 || rect.width < pairwidth(m)) && return buf
     pairs = bonded_colors(rules)
     if isempty(pairs)
         set_string!(buf, rect.x, rect.y, "no bonds", tstyle(:text_dim); max_x=right(rect))
         return buf
     end
-    ncols = max(1, rect.width ÷ PAIR_W)
+    pairw = pairwidth(m)
+    ncols = max(1, rect.width ÷ pairw)
     capacity = ncols * rect.height
     shown = length(pairs) > capacity ? capacity - 1 : length(pairs)
     for i in 1:shown
         c1, c2 = pairs[i]
         selected = (c1, c2) == minmax(m.pair...)
-        x = rect.x + PAIR_W * ((i - 1) % ncols)
+        x = rect.x + pairw * ((i - 1) % ncols)
         y = rect.y + (i - 1) ÷ ncols
         under = selected && m.focus === :rules
-        set_char!(buf, x, y, colorlabel(c1), colorstyle(m, c1; bold=selected, underline=under))
-        set_string!(buf, x + 1, y, " ─ ", bondstyle(m, c1, c2; bold=selected, underline=under); max_x=right(rect))
-        set_char!(buf, x + 4, y, colorlabel(c2), colorstyle(m, c2; bold=selected, underline=under))
+        w = m.labelw
+        set_string!(buf, x, y, label(m, c1), colorstyle(m, c1; bold=selected, underline=under); max_x=right(rect))
+        set_string!(buf, x + w, y, " ─ ", bondstyle(m, c1, c2; bold=selected, underline=under); max_x=right(rect))
+        set_string!(
+            buf, x + w + 3, y, label(m, c2), colorstyle(m, c2; bold=selected, underline=under); max_x=right(rect)
+        )
     end
     if shown < length(pairs)
-        x = rect.x + PAIR_W * (shown % ncols)
+        x = rect.x + pairw * (shown % ncols)
         y = rect.y + shown ÷ ncols
         set_string!(buf, x, y, string("+", length(pairs) - shown), tstyle(:text_dim); max_x=right(rect))
     end
