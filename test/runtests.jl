@@ -3,6 +3,7 @@ using Roly
 using Rotations, StaticArrays, LinearAlgebra, Random
 using NautyGraphs
 using CairoMakie
+using Tachikoma: Tachikoma
 
 include("testutils.jl")
 
@@ -18,7 +19,7 @@ include("testutils.jl")
     include("plotting.jl")
     include("custom_species.jl")
     include("symmetry.jl")
-    include("ruleeditor.jl")
+    include("editrules.jl")
 
     @testset verbose=true "species" begin
         include("species/polygonparticlespecies.jl")
@@ -26,5 +27,3 @@ include("testutils.jl")
         include("species/patchyparticlespecies.jl")
     end
 end;
-
-
