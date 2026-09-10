@@ -54,6 +54,31 @@ function _addspecies(n, spcs=UnitHexagon)
     return m
 end
 
+# The distinct face colors covering a region of a buffer, and how many cells each covers. A 3D
+# particle is drawn as cell backgrounds, which `find_text` cannot see, the faces being spaces.
+function _fills(buf, rect)
+    seen = Dict{UInt8,Int}()
+    for x in rect.x:(rect.x + rect.width - 1), y in rect.y:(rect.y + rect.height - 1)
+        bg = buf.content[Tachikoma.buf_index(buf, x, y)].style.bg
+        bg isa Tachikoma.Color256 && (seen[bg.code] = get(seen, bg.code, 0) + 1)
+    end
+    return seen
+end
+
+# The characters covering a region, which is what a braille drawing puts there.
+function _chars(buf, rect)
+    return [
+        buf.content[Tachikoma.buf_index(buf, x, y)].char for
+        x in rect.x:(rect.x + rect.width - 1), y in rect.y:(rect.y + rect.height - 1)
+    ]
+end
+
+# How squarely the site the cursor is on faces the camera. Negative means it is on the far side.
+function _anchorfacing(m)
+    s = RE.anchorsite(m)
+    return dot(s.pose.psi * SVector(1.0, 0.0, 0.0), RE.camera(m).view)
+end
+
 @testset "ruleeditor" begin
     @test !isnothing(RE)
 
@@ -901,4 +926,248 @@ end
     RE.update!(m, Tachikoma.KeyEvent(:enter))
     moved = sqrt(sum(abs2, RE.anchorsite(m).pose.x - before))
     @test moved < 2 * Roly.bounding_radius(UnitSquare)
+end
+
+@testset "ruleeditor 3d" begin
+    # The isometric camera looks along (1, 1, 1), with an orthonormal pair of screen axes and
+    # the world's z axis up on the screen rather than down.
+    cam = RE.ISOCAM
+    @test cam.view ≈ normalize(SVector(1.0, 1.0, 1.0))
+    @test abs(dot(cam.view, cam.right)) < 1e-12
+    @test abs(dot(cam.view, cam.up)) < 1e-12
+    @test abs(dot(cam.right, cam.up)) < 1e-12
+    @test norm(cam.right) ≈ 1
+    @test norm(cam.up) ≈ 1
+    @test dot(cam.up, SVector(0.0, 0.0, 1.0)) > 0
+
+    # A 2D point is already in the projection plane, so the camera leaves it alone and every 2D
+    # drawing is unchanged by the projection being there at all.
+    @test RE.plane(cam, SVector(3.0, -4.0)) == (3.0, -4.0)
+
+    # The projection is orthographic, so a displacement perpendicular to the view keeps its
+    # length. This is what lets the camera be fitted to a bounding radius in 3D as in 2D.
+    d = normalize(cross(cam.view, SVector(0.0, 0.3, 1.0)))
+    u, v = RE.plane(cam, d)
+    @test hypot(u, v) ≈ 1
+
+    # Turning the camera moves the projection but not the world.
+    turned = RE.Camera(RE.ISO_AZIMUTH + π / 2, RE.ISO_ELEVATION)
+    @test RE.plane(turned, SVector(1.0, 0.0, 0.0)) != RE.plane(cam, SVector(1.0, 0.0, 0.0))
+    @test abs(dot(turned.view, turned.right)) < 1e-12
+
+    # A convex particle shows half its faces, one per shade, and the three shades stay distinct
+    # after quantization to the 256-color cube.
+    pose = one(Roly.posetype(UnitCube))
+    faces = RE.visiblefaces(UnitCube, pose, cam)
+    @test length(faces) == 3
+    @test all(length(first(f)) == 4 for f in faces)
+    @test sort(last.(faces)) == [1, 2, 3]
+    ramp = RE.faceramp(RE.speciesrgb(1))
+    @test length(unique(c.code for c in ramp)) == 3
+    @test all(length(unique(c.code for c in RE.faceramp(RE.speciesrgb(i)))) == 3 for i in 1:8)
+
+    # A 3D species with no polyhedron behind it falls back to the silhouette of its bounding
+    # sphere, the way a 2D one falls back to a circle.
+    sphere = PatchySphere(Roly.Cube(), 0.9)
+    fallback = RE.visiblefaces(sphere, one(Roly.posetype(sphere)), cam)
+    @test length(fallback) == 1
+    @test length(first(fallback[1])) == 24
+
+    # Exactly the sites on the near half are drawn, in 3D. In 2D nothing is ever hidden.
+    @test count(k -> RE.facing(cam, Roly.bindingsite(UnitCube, k)), 1:nsites(UnitCube)) == 3
+    @test all(RE.facing(cam, Roly.bindingsite(UnitSquare, k)) for k in 1:nsites(UnitSquare))
+
+    # A bond between two placed particles is drawn where their faces meet, which in 3D is inside
+    # the solid and so not drawn at all.
+    @test RE.interiorbonds(UnitSquare)
+    @test !RE.interiorbonds(UnitCube)
+
+    # The scanline fill paints the cells whose centers fall inside the polygon, and nothing for a
+    # polygon with no interior.
+    painted = Tuple{Int,Int}[]
+    RE.fillpolygon!((x, y) -> push!(painted, (x, y)), [(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0)])
+    @test length(painted) == 16
+    @test all(0 <= p[1] <= 3 && 0 <= p[2] <= 3 for p in painted)
+    empty!(painted)
+    RE.fillpolygon!((x, y) -> push!(painted, (x, y)), [(0.0, 0.0), (4.0, 4.0)])
+    @test isempty(painted)
+
+    # The editor opens on the canonical viewpoint, with the cursor already on a site it shows.
+    m = RE.EditorModel(UnitCube)
+    @test m.azimuth ≈ RE.ISO_AZIMUTH
+    @test m.elevation ≈ RE.ISO_ELEVATION
+    @test _anchorfacing(m) > 0
+    @test length(m.placements) == 1
+    @test length(m.free) == nsites(UnitCube)
+
+    # Attaching reads the bond off the geometry, exactly as in 2D.
+    m.focus = :construction
+    _attach!(m, 1, 1, 2)
+    @test length(m.placements) == 2
+    @test RE.inferred_bonds(m.placements, m.species) == [(1, 2)]
+    @test nbonds(m.rules) == 1
+
+    # Stepping the cursor onto a face on the far side swings the camera until that face is
+    # square enough to the viewer to read, and no further.
+    m = RE.EditorModel(UnitCube)
+    m.focus = :construction
+    hidden = findfirst(
+        n -> begin
+            i, k = m.free[n]
+            !RE.facing(RE.camera(m), RE.absolutesites(m.placements, m.species)[i][k])
+        end, eachindex(m.free)
+    )
+    @test hidden !== nothing
+    m.anchor = hidden
+    @test _anchorfacing(m) <= 0
+    RE.pivot!(m)
+    @test _anchorfacing(m) ≈ RE.SITE_MARGIN
+    @test abs(m.elevation) <= RE.MAX_ELEVATION
+
+    # A site already facing the camera leaves it where it is.
+    was = (m.azimuth, m.elevation)
+    RE.pivot!(m)
+    @test (m.azimuth, m.elevation) == was
+
+    # Walking the cursor never leaves it on a face the viewer cannot see.
+    m = RE.EditorModel(UnitCube)
+    m.focus = :construction
+    _attach!(m, 1, 1, 2)
+    for _ in 1:12
+        RE.update!(m, Tachikoma.KeyEvent(:right))
+        @test _anchorfacing(m) > 0
+    end
+    for c in (',', '.')
+        for _ in 1:8
+            RE.update!(m, Tachikoma.KeyEvent(c))
+            @test _anchorfacing(m) > 0
+        end
+    end
+
+    # Turning the camera reorders the perimeter the arrow keys walk, but leaves the cursor on
+    # the site it was on.
+    site = m.free[m.anchor]
+    RE.turn!(m, RE.TURN_STEP, 0.0)
+    @test m.free[m.anchor] == site
+    @test issetequal(m.free, RE.freesites(m.placements, m.species, RE.camera(m)))
+
+    # The camera keys turn and tilt it, and the tilt is held clear of the poles where the
+    # projection would degenerate.
+    m = RE.EditorModel(UnitCube)
+    m.focus = :construction
+    az = m.azimuth
+    RE.update!(m, Tachikoma.KeyEvent(']'))
+    @test m.azimuth ≈ az + RE.TURN_STEP
+    RE.update!(m, Tachikoma.KeyEvent('['))
+    @test m.azimuth ≈ az
+    for _ in 1:40
+        RE.update!(m, Tachikoma.KeyEvent('}'))
+    end
+    @test m.elevation ≈ RE.MAX_ELEVATION
+    for _ in 1:80
+        RE.update!(m, Tachikoma.KeyEvent('{'))
+    end
+    @test m.elevation ≈ -RE.MAX_ELEVATION
+
+    # Turning is a 2D no-op, there being nothing to turn.
+    flat = RE.EditorModel(UnitSquare)
+    RE.turn!(flat, RE.TURN_STEP, RE.TURN_STEP)
+    @test flat.azimuth == RE.ISO_AZIMUTH
+    @test flat.elevation == RE.ISO_ELEVATION
+    RE.pivot!(flat)
+    @test flat.azimuth == RE.ISO_AZIMUTH
+
+    # `c` clears the drawing and puts the camera back where it opened.
+    m = RE.EditorModel(UnitCube)
+    m.focus = :construction
+    _attach!(m, 1, 1, 2)
+    RE.turn!(m, 1.0, 0.2)
+    RE.update!(m, Tachikoma.KeyEvent('c'))
+    @test length(m.placements) == 1
+    @test m.azimuth ≈ RE.ISO_AZIMUTH
+    @test m.elevation ≈ RE.ISO_ELEVATION
+
+    # The camera fits the projection of the structure, not its world coordinates: a bond along
+    # the view axis still takes room on screen.
+    m = RE.EditorModel(UnitCube)
+    box = RE.worldbox(m.placements, m.species, cam)
+    r = Roly.bounding_radius(UnitCube)
+    @test box[1] ≈ -r && box[2] ≈ r && box[3] ≈ -r && box[4] ≈ r
+
+    # A 3D scene is drawn as filled cells, in three shades of each species' hue, inside the pane
+    # it was given and nowhere else.
+    buf = Tachikoma.Buffer(Tachikoma.Rect(1, 1, 60, 24))
+    rect = Tachikoma.Rect(10, 5, 30, 12)
+    v = RE.fitworld(m.placements, m.species, rect.width, rect.height)
+    RE.drawparticles!(buf, rect, v, m.placements, m.species)
+    inside = _fills(buf, rect)
+    @test length(inside) == 3
+    @test sum(values(inside)) > 20
+    @test isempty(_fills(buf, Tachikoma.Rect(1, 1, 9, 24)))
+    @test isempty(_fills(buf, Tachikoma.Rect(41, 1, 20, 24)))
+
+    # `wire` draws the same particle as braille instead, which fills no cell and so reads at four
+    # times the vertical resolution. That is what the construction pane and the small drawings use.
+    wired = Tachikoma.Buffer(Tachikoma.Rect(1, 1, 60, 24))
+    RE.drawparticles!(wired, rect, v, m.placements, m.species; wire=true)
+    @test isempty(_fills(wired, rect))
+    @test count(!=(Tachikoma.EMPTY_CHAR), _chars(wired, rect)) > 5
+
+    # A particle standing behind another is hidden by it, the wireframe being composited in depth
+    # order rather than every particle drawing through whatever stands in front of it.
+    P = Roly.posetype(UnitCube)
+    small = PatchySphere(Cube(), 0.4)  # small enough to sit inside the cube's silhouette
+    front = one(P)
+    fixed = RE.World(20.0, 0.0, 0.0, rect.width, rect.height, cam)
+    _wire(ps) = begin
+        b = Tachikoma.Buffer(Tachikoma.Rect(1, 1, 60, 24))
+        RE.drawparticles!(b, rect, fixed, ps, [UnitCube, small]; wire=true)
+        _chars(b, rect)
+    end
+    alone = _wire([(1, front)])
+    back = P(front.x - 3 * cam.view, front.psi)
+    @test count(!=(Tachikoma.EMPTY_CHAR), _wire([(2, back)])) > 5  # it does draw, on its own
+    @test _wire([(1, front), (2, back)]) == alone
+    @test _wire([(1, front), (2, P(front.x + 3 * cam.view, front.psi))]) != alone
+
+    # A refused placement is filled in a neutral gray and crossed out, rather than in a species
+    # hue that would read as a different species.
+    RE.crossout!(buf, rect, [(12.0, 6.0), (20.0, 12.0)])
+    @test any(
+        buf.content[Tachikoma.buf_index(buf, x, y)].char == '╳' for
+        x in rect.x:(rect.x + rect.width - 1), y in rect.y:(rect.y + rect.height - 1)
+    )
+
+    # The whole editor draws a 3D species, and the build pane offers the camera keys that only
+    # 3D has.
+    m = RE.EditorModel(UnitCube)
+    m.showconstruction = true
+    m.focus = :construction
+    _attach!(m, 1, 1, 2)
+    tb = _render(m)
+    @test !isempty(Tachikoma.find_text(tb, "Construction"))
+    @test !isempty(Tachikoma.find_text(tb, "2 particles"))
+    @test !isempty(Tachikoma.find_text(tb, "turn"))
+    @test !isempty(Tachikoma.find_text(tb, "tilt"))
+    @test isnothing(Tachikoma.find_text(_render(RE.EditorModel(UnitSquare)), "tilt"))
+
+    # The enumeration runs on 3D rules and draws the structures it finds.
+    _enumerate!(m)
+    @test !m.stale
+    @test length(m.polyforms) > 1
+    @test all(Roly.dimension(Roly.species(bindingrules(p))[1]) == 3 for p in m.polyforms)
+    m.focus = :enumeration
+    tb = _render(m)
+    @test !isempty(Tachikoma.find_text(tb, "Enumeration"))
+
+    # Zooming holds the cursor still in the projection plane, the same as it does in 2D.
+    m = RE.EditorModel(UnitCube)
+    m.focus = :construction
+    _render(m)
+    s0 = m.scale
+    RE.update!(m, Tachikoma.KeyEvent('='))
+    @test m.scale > s0
+    @test m.manualzoom
+    RE.update!(m, Tachikoma.KeyEvent('-'))
+    @test m.scale ≈ s0
 end

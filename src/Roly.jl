@@ -146,6 +146,21 @@ composition vector underneath.
 `q` accepts from anywhere. A line along the foot reports what the editor last did, or why it
 declined to, and counts the species, bonds and placed particles.
 
+A 3D species is drawn in isometric projection, as the edges of the faces that turn toward the
+camera. Hidden edges go in two steps: within a particle, dropping the faces turned away removes
+exactly the edges on its far side, the body being convex; between particles, the drawing runs
+farthest first and each particle erases what its silhouette covers of everything already drawn
+behind it. The box beside the enumeration grid fills the faces instead, in three shades of the
+species' hue chosen by which way each face turns, a filled face being a whole cell and so needing
+that much room to read. A species with no polyhedron behind it is drawn as its bounding sphere's
+silhouette, the way a 2D species with no corners is drawn as a circle.
+
+`[` and `]` turn the camera about the vertical axis and `{` and `}` tilt it. Stepping the cursor
+onto a face on the far side turns the camera far enough to bring that face into view and no
+further, so the cursor is what is driven and the camera follows it. Only the sites on the near
+side are named, and a bond between two placed particles is left unlabelled, its two faces meeting
+inside the solid where nothing of them shows.
+
 The construction view holds its zoom while you build, so attaching a particle leaves the rest of
 the structure where it was, and it zooms out only when the structure would leave the pane.
 Zooming by hand holds the cursor still rather than the middle of the structure, and switches the
@@ -164,8 +179,6 @@ that turning it turns the labels with it.
   pasting back as `BindingRules(intmat, species)`.
 
 If no bond was formed, returns `nothing` regardless of `output`.
-
-Only 2D species are supported; a 3D structure is better read with [`render`](@ref).
 """
 function ruleeditor end
 

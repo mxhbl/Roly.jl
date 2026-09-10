@@ -79,7 +79,7 @@ Load it with `import` rather than `using`: Tachikoma exports `render` and `Rect`
 ```julia
 using Roly
 import Tachikoma
-rules = ruleeditor(UnitSquare)  # any 2D species, not just regular polygons
+rules = ruleeditor(UnitSquare)  # any species, in 2D or 3D
 ```
 
 The editor opens on two panes, the rules and the polyforms they enumerate, with a third for building structures that `b` brings in.
@@ -164,7 +164,7 @@ That box is worth reaching for: a thumbnail is only a few braille dots across, s
 │n / c part/clear    ││                                          ││                                          ││                                  │
 │                    ││                                          ││                                          ││                                  │
 ╰────────────────────╯╰──────────────────────────────────────────╯╰──────────────────────────────────────────╯╰──────────────────────────────────╯
-                                                                                                                      1 species  4 bonds  4 placed╰──────────────────────────────────╯╰──────────────────────────────────╯╰──────────────────────────────────╯╰──────────────────────────────────╯╰────────────────────────────────────╯
+                                                                                                                      1 species  4 bonds  4 placed
 ```
 
 The faint outline at the top is the pending attachment, drawn before it is committed.
@@ -175,7 +175,57 @@ The pending particle's other sites are named too, so turning it with `r` turns t
 Attachment decides only where a particle goes; the rules still come from every pair of particles in the structure.
 So closing a ring reports bonds that no attachment named: the session above took three attachments to build a 2×2 block, and the last square turned out to touch a second neighbor, which is the fourth pair in the matrix.
 
-A 3D species is rejected, since a projected wireframe is a poor way to judge contact. Build those rules from a bond table and check them with [`render`](@ref).
+### Three dimensions
+
+A 3D species is drawn in isometric projection: an orthographic view from the direction (1, 1, 1), which is what makes depth easy to resolve, since nothing changes size with distance and a nearer convex particle simply covers what stands behind it.
+
+Particles are drawn as braille outlines, the edges of the faces that turn toward the camera.
+Hidden edges go in two steps.
+Within a particle, dropping the faces turned away removes exactly the edges on its far side, the body being convex.
+Between particles, the drawing runs farthest first and each particle erases the dots its silhouette covers from everything already drawn behind it.
+The one exception is the box beside the enumeration grid, which fills the faces instead, in three shades of the species' hue picked by which way each face turns; a filled face is a whole cell, twice the width and four times the height of a braille dot, so it needs that much room to read.
+
+`[` and `]` turn the camera about the vertical axis and `{` and `}` tilt it.
+Most of the time neither is needed, because the camera follows the cursor: stepping onto a face on the far side of the structure turns the camera far enough to bring that face into view and no further, in the plane the view direction and the face normal span, so the structure stays recognizable across the move.
+The cursor is what you drive and the camera is what follows it, which is why the arrow keys mean the same thing in 3D as in 2D.
+`t` and `T` pick which twist of the bond the incoming particle takes, a choice a 2D bond does not leave open.
+
+Only the sites on the near side are named, and a bond between two placed particles is left unlabelled: its two faces meet inside the solid, where a label would sit on whichever particle happens to stand in front of it.
+The species drawings in the rules pane name every site regardless, those on the far side dimmed, since that is the reference drawing of the species and a color in the matrix has to be findable in it.
+
+Species with no polyhedron behind them are drawn as the silhouette of their bounding sphere, a circle, in the same way a 2D species with no corners is.
+[`PatchySphere`](@ref) therefore comes out as a circle with its near patches named, and occludes as a sphere.
+What the drawing does assume is convexity, which every built-in 3D species has.
+
+Below, three cubes bonded 1-2 and 3-4, with a fourth pending, and the enumeration run to size 4.
+The selected structure in the box on the right is filled; here its face colors are shown as shading.
+
+```
+╭─ Editor ───────────╮╭─ Rules ──────────────────────────────────╮╭─ Construction ───────────── 3 particles ─╮╭─ Enumeration ───────────── 28 ≤ 4 ─╮
+│── Any pane ────────││species 1                                 ││▶■1                                       ││1    ⣀⢄⡀     2  ⢀⡠⢄⡀                │
+│tab   next pane     ││                    ⣀⢄⡀                   ││                                          ││  ⢠⣒⠉  ⠈⢑⣢     ⡮⢅⡀⢀⡠⠔⠤⣀             │
+│b     hide build    ││                 ⢠⣒⠉ 4⠈⢑⣢                 ││                                          ││  ⢸ ⠉⠒⡔⠊⠁⢸     ⡇ ⢸⠓⢄⡀⡠⠔⡇            │
+│q     accept        ││                 ⢸ 1⠒⡔2⠁⢸                 ││                                          ││  ⠸⣀  ⡇ ⢀⡸     ⠑⠢⢸  ⢸  ⡇            │
+│                    ││                 ⠸⣀5 36⢀⡸                 ││                                          ││    ⠉⠒⠗⠊⠁         ⠉⠒⠼⠒⠉             │
+│── Rules ───────────││                   ⠉⠒⠗⠊⠁                  ││                                          ││                                    │
+│  3 ─ 4  bonded     ││──────────────────────────────────────────││                                          ││3    ⢀⢄⡀     4                      │
+│↑↓←→  cell          ││  1 2 3 4 5 6                     1 ─ 2   ││                ⣀⢄⡀                       ││    ⡾⢥⣠⠼⡆     ⢠⣔⠊⠉⢀⢄⡀⠉⢒⣤            │
+│enter bond          ││1 · ▀ · · · ·                     3 ─ 4   ││             ⣠⠔⠊ 6⠈⠑⢤⣀                    ││    ⢇ ⡇⣀⠇     ⢸ ⠉⡾⢥⣠⠼⡆⠁⢸            │
+│a / d add/drop      ││2 ▀ · · · · ·                             ││             ⡏⠙⠲⢤⣀⠤⠒⠉4⠉⠒⠤⡀                ││    ⡇⠉⠋⠁⡇      ⠉⠒⢇⡀⣇⡠⠇⠊⠁            │
+│                    ││3 · · · ▀ · ·                             ││             ⡇ 3 ⡏⠑⠦⣀⢀⡠⠖⠉⡇                ││    ⠈⠒⠗⠉          ⠈⠁                │
+│── Build ───────────││4 · · ▀ · · ·                             ││             ⠑⠢⣀ ⡇ 5 ⡇ 6 ⡇                ││                                    │
+│  at 3.2 site 4     ││5 · · · · · ·                             ││                ⠉⠣⢄⡀ ⡇⢀⣀⠤⠒⠤⣀              ││5   ⣀⠤⣀      6     ⢀⢄⡀              │
+│                    ││6 · · · · · ·                             ││                 ⡇ ⠈⠑⡶⢍⡀ 2 ⣀⠭⡆            ││   ⡟⠦⣠⠔⠑⢢⡀     ⢀⡠⠔⡾⢥⣀⠬⢳             │
+│↑↓←→  site          ││                                          ││                 ⢇⡀6 ⡇ 24⡔⠊⠁ ⡇            ││   ⠣⢄⡏⠙⡞⢉⡇     ⢸⠉⠒⢇ ⡇⢀⡸             │
+│, .   step          ││                                          ││                  ⠈⠒⠤⡇ 6 ⡇ 3 ⡇            ││     ⠈⠑⠋⠁⡇     ⠘⠢⢄⡇⠉⠋⠁⢸             │
+│r / R turn          ││                                          ││                     ⠈⠑⠤⣀⣇⡠⠒⠉             ││────────────      ⠈⠒⠗⠊⠁             │
+│[ ]   turn          ││                                          ││                         ⠁                ││                                    │
+│{ }   tilt          ││                                          ││                                          ││                                    │
+│enter attach        ││                                          ││                                          ││                                    │
+│bksp  undo          ││                                          ││                                          ││                                    │
+╰────────────────────╯╰──────────────────────────────────────────╯╰──────────────────────────────────────────╯╰────────────────────────────────────╯
+                                                                                                                        1 species  2 bonds  3 placed
+```
 
 Pass `output=:bonds` or `output=:matrix` for a copy-pasteable result instead of a `BindingRules`:
 

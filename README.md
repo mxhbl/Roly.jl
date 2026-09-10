@@ -38,7 +38,7 @@ It comes from a package extension, so Tachikoma has to be loaded. Load it with `
 ```julia
 using Roly
 import Tachikoma
-rules = ruleeditor(UnitSquare)  # any 2D species, not just regular polygons
+rules = ruleeditor(UnitSquare)  # any species, in 2D or 3D
 ```
 
 The editor opens on two panes, the rules and the polyforms they enumerate, with a third for building structures that `b` brings in. `Tab` moves the focus between the panes on screen and the arrow keys and `Enter` act on whichever has it, with the sidebar keeping a key section per pane. The rules are always shown, since they are what the editor produces, and a design can be made as a bond table alone. A line along the foot reports what the editor last did and keeps a running count of species, bonds and placed particles.
@@ -74,12 +74,14 @@ The rightmost pane draws the polyforms the rules allow. It runs on `e` rather th
 │n / c part/clear    ││                                          ││                                          ││                                  │
 │                    ││                                          ││                                          ││                                  │
 ╰────────────────────╯╰──────────────────────────────────────────╯╰──────────────────────────────────────────╯╰──────────────────────────────────╯
-                                                                                                                      1 species  4 bonds  4 placed╰──────────────────────────────────╯╰──────────────────────────────────╯╰──────────────────────────────────╯╰──────────────────────────────────╯╰────────────────────────────────────╯
+                                                                                                                      1 species  4 bonds  4 placed
 ```
 
 The faint outline at the top is the pending attachment, drawn before you commit it. The digits are binding site colors, numbered the way the returned rules number them, so they name the same rows the matrix does. Where two sites meet, both colors are written side by side, including the pending bond at the cursor, so you can read off which pair you are about to create before committing it.
 
 Because the rules are read off every pair of particles rather than only the pairs you attached, closing a ring reveals bonds you never asked for. In the session above three attachments built a 2×2 block, and the last square turned out to touch a second neighbor as well, which is why the matrix carries four color pairs.
+
+A 3D species is drawn in isometric projection, as the edges of the faces that turn toward the camera. Dropping the faces turned away removes a particle's own hidden edges, and drawing farthest first, each particle erasing what its silhouette covers of the ones behind it, removes the rest. The box beside the enumeration grid fills the faces instead, in three shades of the species' hue. `[`/`]` turn the camera and `{`/`}` tilt it, and stepping the cursor onto a face on the far side turns the camera just far enough to bring it into view, so the cursor is what you drive and the camera follows. `t`/`T` pick which twist of a bond to use, a choice only 3D has.
 
 Pass `output=:bonds` or `output=:matrix` to get a copy-pasteable representation instead of a `BindingRules`, useful for pinning a specific design in code:
 ```julia
