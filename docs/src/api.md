@@ -186,5 +186,5 @@ polyformplot!
 Provided by the Tachikoma extension, so `import Tachikoma` is required.
 
 ```@docs
-ruleeditor
+editrules
 ```

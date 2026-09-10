@@ -72,14 +72,14 @@ The named groups are [`Cyclic`](@ref), [`Dihedral`](@ref), [`Tetrahedral`](@ref)
 
 ## Sketching rules interactively
 
-[`ruleeditor`](@ref) builds a bond table geometrically: grow a structure by attaching blocks face to face and it reads the rules off every pair of touching sites.
+[`editrules`](@ref) builds a bond table geometrically: grow a structure by attaching blocks face to face and it reads the rules off every pair of touching sites.
 It is provided by a package extension, so Tachikoma has to be loaded.
 Load it with `import` rather than `using`: Tachikoma exports `render` and `Rect` as well, and `using` both packages would leave those names ambiguous.
 
 ```julia
 using Roly
 import Tachikoma
-rules = ruleeditor(UnitSquare)  # any species, in 2D or 3D
+rules = editrules(UnitSquare)  # any species, in 2D or 3D
 ```
 
 The editor opens on two panes, the rules and the polyforms they enumerate, with a third for building structures that `b` brings in.
@@ -249,7 +249,7 @@ Below, three cubes bonded 3-4 and 5-6, with a fourth pending, and the enumeratio
 Pass `output=:bonds` or `output=:matrix` for a copy-pasteable result instead of a `BindingRules`:
 
 ```julia
-bonds = ruleeditor(UnitSquare; output=:bonds)  # n×4 integer matrix
+bonds = editrules(UnitSquare; output=:bonds)  # n×4 integer matrix
 rules   = BindingRules(bonds, UnitSquare)         # reproduces the same rules
 ```
 

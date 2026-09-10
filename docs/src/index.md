@@ -11,7 +11,7 @@ Given a set of building blocks and the bonds allowed between their sites, Roly.j
 - enumerate every geometrically valid polyform up to a chosen size,
 - generate and store polyforms for further processing,
 - estimate how many there are when exact enumeration is too expensive,
-- build binding rules interactively by attaching particles face to face ([`ruleeditor`](workflow.md#Sketching-rules-interactively)).
+- build binding rules interactively by attaching particles face to face ([`editrules`](workflow.md#Sketching-rules-interactively)).
 
 ## Installation
 

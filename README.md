@@ -33,12 +33,12 @@ rules = BindingRules(bonds, UnitTriangle)
 The [documentation](https://goodrichgroup.github.io/Roly.jl/dev/workflow/) lists every built-in geometry and shows how coloring a species' binding sites sets its symmetry. In 3D a bond also fixes how the two blocks are turned relative to one another, which the [orientation page](https://goodrichgroup.github.io/Roly.jl/dev/orientation/) explains. To implement your own particle species, see [custom particle species](https://goodrichgroup.github.io/Roly.jl/dev/custom_species/).
 
 ### Sketching Binding Rules interactively
-Instead of writing the bonds matrix out by hand, you can build one geometrically with `ruleeditor`, a terminal editor that grows a structure by attaching blocks face to face and reads the binding rules off every pair of touching sites.
+Instead of writing the bonds matrix out by hand, you can build one geometrically with `editrules`, a terminal editor that grows a structure by attaching blocks face to face and reads the binding rules off every pair of touching sites.
 It comes from a package extension, so Tachikoma has to be loaded. Load it with `import` rather than `using`: Tachikoma exports `render` and `Rect` too, and `using` both packages would make those names ambiguous.
 ```julia
 using Roly
 import Tachikoma
-rules = ruleeditor(UnitSquare)  # any species, in 2D or 3D
+rules = editrules(UnitSquare)  # any species, in 2D or 3D
 ```
 
 The editor opens on two panes, the rules and the polyforms they enumerate, with a third for building structures that `b` brings in. `Tab` moves the focus between the panes on screen and the arrow keys and `Enter` act on whichever has it, with the sidebar keeping a key section per pane. The rules are always shown, since they are what the editor produces, and a design can be made as a bond table alone. A line along the foot reports what the editor last did and keeps a running count of species, bonds and placed particles.
@@ -87,7 +87,7 @@ A 3D species is drawn in isometric projection, as the edges of the faces that tu
 
 Pass `output=:bonds` or `output=:matrix` to get a copy-pasteable representation instead of a `BindingRules`, useful for pinning a specific design in code:
 ```julia
-bonds = ruleeditor(UnitSquare; output=:bonds)  # n×4 integer matrix
+bonds = editrules(UnitSquare; output=:bonds)  # n×4 integer matrix
 rules = BindingRules(bonds, UnitSquare)           # reproduces the same rules
 ```
 

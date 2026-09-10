@@ -37,7 +37,7 @@ using Roly:
     twistfreedom
 
 import Tachikoma: view, update!, should_quit
-import Roly: ruleeditor
+import Roly: editrules
 
 ### Palette
 
@@ -2521,7 +2521,7 @@ end
 ### Entry point
 
 # Documented on the stub in `Roly`, so that Documenter finds it without loading this extension.
-function ruleeditor(spcs::ParticleSpecies; output::Symbol=:rules)
+function editrules(spcs::ParticleSpecies; output::Symbol=:rules)
     output in (:rules, :bonds, :matrix) || throw(ArgumentError("output must be :rules, :bonds, or :matrix"))
 
     m = EditorModel(spcs)

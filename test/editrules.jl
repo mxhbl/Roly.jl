@@ -99,7 +99,7 @@ function _anchorfacing(m)
     return dot(s.pose.psi * SVector(1.0, 0.0, 0.0), RE.camera(m).view)
 end
 
-@testset "ruleeditor" begin
+@testset "editrules" begin
     @test !isnothing(RE)
 
     # A fresh model holds one particle, every site of it free, and no rule yet.
@@ -997,7 +997,7 @@ end
     @test moved < 2 * Roly.bounding_radius(UnitSquare)
 end
 
-@testset "ruleeditor 3d" begin
+@testset "editrules 3d" begin
     # The isometric camera looks along (1, 1, 1), with an orthonormal pair of screen axes and
     # the world's z axis up on the screen rather than down.
     cam = RE.ISOCAM

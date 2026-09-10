@@ -77,11 +77,11 @@ include("species/polygonparticlespecies.jl")
 include("species/polyhedronparticlespecies.jl")
 include("species/patchyparticlespecies.jl")
 
-export ruleeditor
+export editrules
 export render, polyformplot, polyformplot!
 
 """
-    ruleeditor(species::ParticleSpecies; output=:rules)
+    editrules(species::ParticleSpecies; output=:rules)
 
 Open a terminal editor that builds binding rules geometrically, and return them once you
 accept. Provided by the Tachikoma extension, so it needs `import Tachikoma`, which is preferable
@@ -189,7 +189,7 @@ that turning it turns the labels with it.
 
 If no bond was formed, returns `nothing` regardless of `output`.
 """
-function ruleeditor end
+function editrules end
 
 """
     render(p; hidedecorations=true, kwargs...)
